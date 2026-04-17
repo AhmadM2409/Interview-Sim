@@ -1,0 +1,193 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Mic, Code2, ArrowRight, Trophy } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+
+export const Route = createFileRoute("/_authenticated/dashboard")({
+  head: () => ({
+    meta: [{ title: "Dashboard — AI Interview Simulator" }],
+  }),
+  component: DashboardPage,
+});
+
+type InterviewRow = {
+  id: string;
+  job_role: string;
+  status: string;
+  total_score: number | null;
+  started_at: string;
+};
+
+type CodingRow = {
+  id: string;
+  problem_title: string;
+  status: string;
+  started_at: string;
+};
+
+function DashboardPage() {
+  const { user } = useAuth();
+  const [interviews, setInterviews] = useState<InterviewRow[]>([]);
+  const [coding, setCoding] = useState<CodingRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      supabase
+        .from("interview_sessions")
+        .select("id, job_role, status, total_score, started_at")
+        .order("started_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("coding_sessions")
+        .select("id, problem_title, status, started_at")
+        .order("started_at", { ascending: false })
+        .limit(5),
+    ]).then(([i, c]) => {
+      if (i.data) setInterviews(i.data);
+      if (c.data) setCoding(c.data);
+      setLoading(false);
+    });
+  }, [user]);
+
+  return (
+    <main className="container mx-auto px-4 py-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Welcome{user?.user_metadata?.full_name ? `, ${user.user_metadata.full_name}` : ""}
+        </h1>
+        <p className="mt-1 text-muted-foreground">Pick a mode and start practicing.</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <ActionCard
+          to="/interview"
+          icon={<Mic className="h-6 w-6" />}
+          title="New voice interview"
+          description="Pick a role and start a real-time spoken interview."
+        />
+        <ActionCard
+          to="/coding"
+          icon={<Code2 className="h-6 w-6" />}
+          title="New coding session"
+          description="Solve a problem with live AI feedback."
+        />
+      </div>
+
+      <div className="mt-12 grid gap-8 lg:grid-cols-2">
+        <HistorySection
+          title="Recent interviews"
+          empty="No interviews yet — start your first one."
+          loading={loading}
+        >
+          {interviews.map((row) => (
+            <li
+              key={row.id}
+              className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3"
+            >
+              <div>
+                <div className="font-medium">{row.job_role}</div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(row.started_at).toLocaleString()} · {row.status}
+                </div>
+              </div>
+              {row.total_score != null && (
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+                  <Trophy className="h-4 w-4" />
+                  {Number(row.total_score).toFixed(1)}
+                </div>
+              )}
+            </li>
+          ))}
+        </HistorySection>
+
+        <HistorySection
+          title="Recent coding sessions"
+          empty="No coding sessions yet."
+          loading={loading}
+        >
+          {coding.map((row) => (
+            <li
+              key={row.id}
+              className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3"
+            >
+              <div>
+                <div className="font-medium">{row.problem_title}</div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(row.started_at).toLocaleString()} · {row.status}
+                </div>
+              </div>
+            </li>
+          ))}
+        </HistorySection>
+      </div>
+    </main>
+  );
+}
+
+function ActionCard({
+  to,
+  icon,
+  title,
+  description,
+}: {
+  to: "/interview" | "/coding";
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-6 transition-all hover:-translate-y-0.5"
+      style={{ boxShadow: "var(--shadow-elegant)" }}
+    >
+      <div
+        className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg text-primary-foreground"
+        style={{ backgroundImage: "var(--gradient-brand)" }}
+      >
+        {icon}
+      </div>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <ArrowRight className="absolute right-6 top-6 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+    </Link>
+  );
+}
+
+function HistorySection({
+  title,
+  empty,
+  loading,
+  children,
+}: {
+  title: string;
+  empty: string;
+  loading: boolean;
+  children: React.ReactNode;
+}) {
+  const items = Array.isArray(children) ? children : [children];
+  const hasItems = items.filter(Boolean).length > 0;
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
+      {loading ? (
+        <div className="rounded-lg border border-border/60 bg-card p-6 text-sm text-muted-foreground">
+          Loading...
+        </div>
+      ) : hasItems ? (
+        <ul className="space-y-2">{children}</ul>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border/60 bg-card/40 p-6 text-sm text-muted-foreground">
+          {empty}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Suppress unused warnings on Button import in production builds
+void Button;
