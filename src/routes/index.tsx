@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Mic, Code2, Sparkles, Trophy, Brain, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/SiteHeader";
+import heroBg from "@/assets/hero-bg.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +31,18 @@ function LandingPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
+        <img
+          src={heroBg}
+          alt=""
+          aria-hidden
+          width={1920}
+          height={1080}
+          className="pointer-events-none absolute inset-0 -z-20 h-full w-full object-cover opacity-70"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-background/30 via-background/60 to-background"
+        />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10"
