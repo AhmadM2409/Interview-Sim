@@ -67,7 +67,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {children}
+        <AuthProvider>
+          {children}
+          <Toaster />
+        </AuthProvider>
         <Scripts />
       </body>
     </html>
@@ -75,10 +78,5 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return (
-    <AuthProvider>
-      <Outlet />
-      <Toaster />
-    </AuthProvider>
-  );
+  return <Outlet />;
 }
