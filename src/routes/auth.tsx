@@ -1,24 +1,39 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Brain } from "lucide-react";
+import { Brain, Phone } from "lucide-react";
+import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Sign in — AI Interview Simulator" },
-      { name: "description", content: "Sign in with Google to start practicing interviews." },
+      {
+        name: "description",
+        content: "Sign in with Google or your phone number to start practicing interviews.",
+      },
     ],
   }),
   component: AuthPage,
 });
 
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{6,14}$/, "Use international format, e.g. +14155552671");
+const otpSchema = z.string().trim().regex(/^\d{4,8}$/, "Enter the code from your text message");
+
 function AuthPage() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithPhone, verifyPhoneOtp } = useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
@@ -36,8 +51,45 @@ function AuthPage() {
     }
   };
 
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = phoneSchema.safeParse(phone);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid phone number");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await signInWithPhone(parsed.data);
+      setPhone(parsed.data);
+      setOtpSent(true);
+      toast.success("Code sent! Check your messages.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send code");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = otpSchema.safeParse(otp);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid code");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await verifyPhoneOtp(phone, parsed.data);
+      // navigation handled by effect once session updates
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Verification failed");
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <div
         className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-8 text-center"
         style={{ boxShadow: "var(--shadow-elegant)" }}
@@ -63,8 +115,68 @@ function AuthPage() {
           className="mt-8 w-full gap-3"
         >
           <GoogleIcon />
-          {submitting ? "Redirecting..." : "Continue with Google"}
+          Continue with Google
         </Button>
+
+        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          OR
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        {!otpSent ? (
+          <form onSubmit={handleSendOtp} className="space-y-3 text-left">
+            <Label htmlFor="phone" className="text-sm">
+              Phone number
+            </Label>
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+14155552671"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              maxLength={16}
+              disabled={submitting}
+            />
+            <Button type="submit" disabled={submitting} size="lg" className="w-full gap-2">
+              <Phone className="h-4 w-4" />
+              {submitting ? "Sending..." : "Send code"}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyOtp} className="space-y-3 text-left">
+            <Label htmlFor="otp" className="text-sm">
+              Verification code
+            </Label>
+            <Input
+              id="otp"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+              maxLength={8}
+              disabled={submitting}
+            />
+            <Button type="submit" disabled={submitting} size="lg" className="w-full">
+              {submitting ? "Verifying..." : "Verify & sign in"}
+            </Button>
+            <button
+              type="button"
+              className="w-full text-xs text-muted-foreground underline-offset-4 hover:underline"
+              onClick={() => {
+                setOtp("");
+                setOtpSent(false);
+              }}
+              disabled={submitting}
+            >
+              Use a different number
+            </button>
+          </form>
+        )}
 
         <p className="mt-6 text-xs text-muted-foreground">
           By continuing you agree to our terms of service.
