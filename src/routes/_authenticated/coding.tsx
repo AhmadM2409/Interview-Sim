@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Code2, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -116,6 +116,7 @@ function CodingSetupPage() {
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+      <Outlet />
     </main>
   );
 }
