@@ -33,7 +33,8 @@ const PROBLEMS = [
   },
   {
     title: "Reverse Linked List",
-    description: "Given the head of a singly linked list, reverse the list, and return the reversed list.",
+    description:
+      "Given the head of a singly linked list, reverse the list, and return the reversed list.",
   },
   {
     title: "Maximum Subarray",
@@ -125,12 +126,7 @@ function CodingSetupPage() {
           </div>
         </div>
 
-        <Button
-          size="lg"
-          className="mt-8 w-full gap-2"
-          onClick={startSession}
-          disabled={creating}
-        >
+        <Button size="lg" className="mt-8 w-full gap-2" onClick={startSession} disabled={creating}>
           {creating ? "Starting..." : "Open editor"}
           <ArrowRight className="h-4 w-4" />
         </Button>

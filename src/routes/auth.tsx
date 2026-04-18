@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Brain, Phone } from "lucide-react";
+import { Brain, Mail, Phone } from "lucide-react";
 import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -25,12 +25,20 @@ const phoneSchema = z
   .string()
   .trim()
   .regex(/^\+[1-9]\d{6,14}$/, "Use international format, e.g. +14155552671");
-const otpSchema = z.string().trim().regex(/^\d{4,8}$/, "Enter the code from your text message");
+const emailSchema = z.string().trim().email("Enter a valid email address");
+const passwordSchema = z.string().trim().min(6, "Use at least 6 characters for the password");
+const otpSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4,8}$/, "Enter the code from your text message");
 
 function AuthPage() {
-  const { user, loading, signInWithGoogle, signInWithPhone, verifyPhoneOtp } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signInWithPhone, verifyPhoneOtp } =
+    useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -47,6 +55,31 @@ function AuthPage() {
       await signInWithGoogle();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sign-in failed");
+      setSubmitting(false);
+    }
+  };
+
+  const handleEmailPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const parsedEmail = emailSchema.safeParse(email);
+    if (!parsedEmail.success) {
+      toast.error(parsedEmail.error.issues[0]?.message ?? "Invalid email");
+      return;
+    }
+
+    const parsedPassword = passwordSchema.safeParse(password);
+    if (!parsedPassword.success) {
+      toast.error(parsedPassword.error.issues[0]?.message ?? "Invalid password");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await signInWithEmail(parsedEmail.data, parsedPassword.data);
+      toast.success("Signed in successfully.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not sign in");
       setSubmitting(false);
     }
   };
@@ -117,6 +150,50 @@ function AuthPage() {
           <GoogleIcon />
           Continue with Google
         </Button>
+
+        <div className="mt-6 rounded-xl border border-dashed border-border/70 bg-muted/30 p-4 text-left">
+          <p className="text-sm font-medium">Testing login</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Use email and password to sign in or create an account automatically for testing.
+          </p>
+
+          <form onSubmit={handleEmailPassword} className="mt-4 space-y-3">
+            <div className="space-y-2 text-left">
+              <Label htmlFor="email" className="text-sm">
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="space-y-2 text-left">
+              <Label htmlFor="password" className="text-sm">
+                Password
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Enter a password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
+
+            <Button type="submit" disabled={submitting} size="lg" className="w-full gap-2">
+              <Mail className="h-4 w-4" />
+              {submitting ? "Signing in..." : "Continue with email"}
+            </Button>
+          </form>
+        </div>
 
         <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="h-px flex-1 bg-border" />

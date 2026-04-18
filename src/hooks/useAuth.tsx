@@ -8,6 +8,7 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithPhone: (phone: string) => Promise<void>;
   verifyPhoneOtp: (phone: string, token: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -43,6 +44,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (result.error) throw result.error;
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    const signUpResult = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (signUpResult.error) {
+      const message = signUpResult.error.message.toLowerCase();
+      const accountAlreadyExists =
+        message.includes("user already registered") ||
+        message.includes("already registered") ||
+        message.includes("already exists");
+
+      if (!accountAlreadyExists) {
+        throw signUpResult.error;
+      }
+
+      const signInResult = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInResult.error) throw signInResult.error;
+      return;
+    }
+
+    if (signUpResult.data.session) return;
+
+    const signInResult = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInResult.error) {
+      throw new Error(
+        "Account created, but Supabase needs email confirmations disabled for immediate sign-in during testing.",
+      );
+    }
+  };
+
   const signInWithPhone = async (phone: string) => {
     const { error } = await supabase.auth.signInWithOtp({ phone });
     if (error) throw error;
@@ -64,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: session?.user ?? null,
         loading,
         signInWithGoogle,
+        signInWithEmail,
         signInWithPhone,
         verifyPhoneOtp,
         signOut,

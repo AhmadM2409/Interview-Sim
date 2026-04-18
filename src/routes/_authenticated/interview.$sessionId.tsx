@@ -44,7 +44,10 @@ function InterviewSessionPage() {
 
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">
-      <Link to="/interview" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/interview"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
         <ArrowLeft className="h-4 w-4" />
         Back
       </Link>
@@ -70,9 +73,9 @@ function InterviewSessionPage() {
           <Construction className="mx-auto h-10 w-10 text-muted-foreground" />
           <h2 className="mt-3 text-lg font-semibold">Voice agent coming next</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            The session was created. The next step is wiring up the ElevenLabs Conversational
-            Agent so it can ask role-specific questions, listen to your answers, and score you in
-            real time.
+            The session was created. The next step is wiring up the ElevenLabs Conversational Agent
+            so it can ask role-specific questions, listen to your answers, and score you in real
+            time.
           </p>
           <Button className="mt-5" disabled>
             Connect microphone
