@@ -10,7 +10,7 @@ export const initInterviewFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<InitResult> => {
     const { sessionId, jobRole, userId } = data;
 
-    // Ensure session exists in Supabase (may have been created only in localStorage)
+    // Ensure session exists in local interview persistence.
     let session = await getSession(sessionId, userId);
     if (!session) {
       await upsertSession(sessionId, userId, jobRole);

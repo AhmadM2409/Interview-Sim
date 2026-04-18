@@ -12,44 +12,19 @@ describe('TDD-06: Auth isolation', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('getSession returns null when userId does not match session owner', async () => {
-    // Supabase REST returns empty array when WHERE clauses don't match
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      text: async () => '[]',
-      json: async () => [],
-    })));
+    const sessionId = `auth-iso-user-b-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await supabase.upsertSession(sessionId, 'user-b', 'ML Engineer');
 
-    vi.stubEnv('SUPABASE_URL', 'https://test.supabase.co');
-    vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'test-key');
-
-    const session = await supabase.getSession('session-of-user-b', 'user-a');
+    const session = await supabase.getSession(sessionId, 'user-a');
     expect(session).toBeNull();
   });
 
   it('getSession returns session when userId matches', async () => {
-    const mockSession = {
-      id: 'sess-1',
-      user_id: 'user-a',
-      job_role: 'ML Engineer',
-      status: 'active',
-      total_score: null,
-      summary_feedback: null,
-      completed_at: null,
-      is_degraded: false,
-      created_at: '2024-01-01T00:00:00Z',
-    };
+    const sessionId = `auth-iso-user-a-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await supabase.upsertSession(sessionId, 'user-a', 'ML Engineer');
 
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      text: async () => JSON.stringify([mockSession]),
-      json: async () => [mockSession],
-    })));
-
-    vi.stubEnv('SUPABASE_URL', 'https://test.supabase.co');
-    vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'test-key');
-
-    const session = await supabase.getSession('sess-1', 'user-a');
-    expect(session?.id).toBe('sess-1');
+    const session = await supabase.getSession(sessionId, 'user-a');
+    expect(session?.id).toBe(sessionId);
   });
 });
 
