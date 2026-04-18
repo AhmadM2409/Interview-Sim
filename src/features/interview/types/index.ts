@@ -112,6 +112,7 @@ export interface STTResult {
 
 export interface AnswerResult {
   ok: true;
+  conflict: boolean;
 }
 
 export interface EvaluateResult {

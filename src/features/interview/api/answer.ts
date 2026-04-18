@@ -13,8 +13,7 @@ export const answerFn = createServerFn({ method: 'POST' })
     if (!session) throw new Error('NOT_FOUND');
 
     // Atomic write: WHERE answer_text IS NULL prevents double-write
+    // Returns conflict:true if already written — caller treats as idempotent success
     const updated = await atomicWriteAnswer(sessionId, questionIndex, answerText);
-    if (!updated) throw new Error('CONFLICT');
-
-    return { ok: true };
+    return { ok: true, conflict: !updated };
   });

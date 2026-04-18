@@ -246,18 +246,10 @@ export function useInterviewEngine({
     try {
       transition('EVALUATING');
 
-      // Write answer (atomic — 409 if already written)
-      try {
-        await answerFn({
-          data: { sessionId, questionIndex, answerText: transcript, userId },
-        });
-      } catch (err) {
-        if (err instanceof Error && err.message === 'CONFLICT') {
-          // Already written — treat as idempotent success
-        } else {
-          throw err;
-        }
-      }
+      // Write answer (atomic); conflict:true means already written — both paths proceed to evaluate
+      await answerFn({
+        data: { sessionId, questionIndex, answerText: transcript, userId },
+      });
 
       // Evaluate answer
       const evalResult = await evaluateFn({

@@ -46,7 +46,7 @@ describe('TDD-01: LLM schema validation & retry', () => {
             choices: [{ message: { content } }],
             usage: { prompt_tokens: 100, completion_tokens: 50 },
           }),
-          text: async () => '',
+          text: async (): Promise<string> => '',
         };
       }
 
@@ -71,7 +71,7 @@ describe('TDD-01: LLM schema validation & retry', () => {
           json: async () => ({
             choices: [{ message: { content: '{"wrong_key": []}' } }],
           }),
-          text: async () => '',
+          text: async (): Promise<string> => '',
         };
       }
       return { ok: false, status: 404, text: async () => '' };
@@ -123,7 +123,7 @@ describe('TDD-02: Tavily exhaustion & fallback', () => {
             results: [{ title: 'Test', content: 'Content' }],
             answer: 'Good answer',
           }),
-          text: async () => '',
+          text: async (): Promise<string> => '',
         };
       }
       return { ok: false, status: 404, text: async () => '' };

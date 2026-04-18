@@ -1,5 +1,5 @@
 import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Mic, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { createInterviewSession } from "@/lib/localData";
@@ -38,8 +38,11 @@ function InterviewSetupPage() {
   const [role, setRole] = useState<string>("Software Engineer");
   const [creating, setCreating] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const startingRef = useRef(false);
 
   const startInterview = async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     if (!user) {
       setStartError("Not signed in — please refresh and log in again.");
       return;
@@ -53,6 +56,7 @@ function InterviewSetupPage() {
       setStartError(err instanceof Error ? err.message : "Failed to start interview");
     } finally {
       setCreating(false);
+      startingRef.current = false;
     }
   };
 
