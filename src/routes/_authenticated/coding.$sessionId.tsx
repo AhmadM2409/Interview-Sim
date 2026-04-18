@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Code2, ArrowLeft, Sparkles } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { getCodingSessionById, saveCodingSessionCode } from "@/lib/localData";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -27,26 +27,28 @@ function CodingSessionPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase
-      .from("coding_sessions")
-      .select("id, problem_title, problem_description, language, final_code")
-      .eq("id", sessionId)
-      .single()
-      .then(({ data }) => {
-        setSession(data);
-        setCode(data?.final_code ?? "// Write your solution here\n\n");
-      });
+    const data = getCodingSessionById(sessionId);
+    if (!data) {
+      setSession(null);
+      return;
+    }
+
+    setSession({
+      id: data.id,
+      problem_title: data.problem_title,
+      problem_description: data.problem_description,
+      language: data.language,
+      final_code: data.final_code,
+    });
+    setCode(data.final_code ?? "// Write your solution here\n\n");
   }, [sessionId]);
 
   const saveDraft = async () => {
     setSaving(true);
-    const { error } = await supabase
-      .from("coding_sessions")
-      .update({ final_code: code })
-      .eq("id", sessionId);
+    const ok = saveCodingSessionCode(sessionId, code);
     setSaving(false);
-    if (error) {
-      toast.error(error.message);
+    if (!ok) {
+      toast.error("Could not save draft");
     } else {
       toast.success("Draft saved");
     }

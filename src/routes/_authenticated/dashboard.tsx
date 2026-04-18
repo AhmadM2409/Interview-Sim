@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Mic, Code2, ArrowRight, Trophy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { listCodingSessions, listInterviewSessions } from "@/lib/localData";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -34,23 +34,29 @@ function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
-    Promise.all([
-      supabase
-        .from("interview_sessions")
-        .select("id, job_role, status, total_score, started_at")
-        .order("started_at", { ascending: false })
-        .limit(5),
-      supabase
-        .from("coding_sessions")
-        .select("id, problem_title, status, started_at")
-        .order("started_at", { ascending: false })
-        .limit(5),
-    ]).then(([i, c]) => {
-      if (i.data) setInterviews(i.data);
-      if (c.data) setCoding(c.data);
+    if (!user) {
       setLoading(false);
-    });
+      return;
+    }
+
+    const interviews = listInterviewSessions(user.id, 5).map((s) => ({
+      id: s.id,
+      job_role: s.job_role,
+      status: s.status,
+      total_score: s.total_score,
+      started_at: s.started_at,
+    }));
+
+    const coding = listCodingSessions(user.id, 5).map((s) => ({
+      id: s.id,
+      problem_title: s.problem_title,
+      status: s.status,
+      started_at: s.started_at,
+    }));
+
+    setInterviews(interviews);
+    setCoding(coding);
+    setLoading(false);
   }, [user]);
 
   return (

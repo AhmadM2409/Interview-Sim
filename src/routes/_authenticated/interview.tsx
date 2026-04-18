@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mic, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { createInterviewSession } from "@/lib/localData";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/interview")({
   head: () => ({
@@ -42,17 +41,9 @@ function InterviewSetupPage() {
   const startInterview = async () => {
     if (!user) return;
     setCreating(true);
-    const { data, error } = await supabase
-      .from("interview_sessions")
-      .insert({ user_id: user.id, job_role: role, status: "in_progress" })
-      .select("id")
-      .single();
+    const session = createInterviewSession(user.id, role);
     setCreating(false);
-    if (error || !data) {
-      toast.error(error?.message ?? "Could not start session");
-      return;
-    }
-    navigate({ to: "/interview/$sessionId", params: { sessionId: data.id } });
+    navigate({ to: "/interview/$sessionId", params: { sessionId: session.id } });
   };
 
   return (

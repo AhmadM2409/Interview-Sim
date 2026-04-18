@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Mic, Construction, ArrowLeft } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { getInterviewSessionById } from "@/lib/localData";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/interview/$sessionId")({
@@ -23,15 +23,17 @@ function InterviewSessionPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from("interview_sessions")
-      .select("id, job_role, status")
-      .eq("id", sessionId)
-      .single()
-      .then(({ data }) => {
-        setSession(data);
-        setLoading(false);
-      });
+    const data = getInterviewSessionById(sessionId);
+    setSession(
+      data
+        ? {
+            id: data.id,
+            job_role: data.job_role,
+            status: data.status,
+          }
+        : null,
+    );
+    setLoading(false);
   }, [sessionId]);
 
   if (loading) {

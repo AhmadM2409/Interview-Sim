@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Code2, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { createCodingSession } from "@/lib/localData";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coding")({
   head: () => ({
@@ -56,22 +55,8 @@ function CodingSetupPage() {
     if (!user) return;
     const problem = PROBLEMS[Number(problemIdx)];
     setCreating(true);
-    const { data, error } = await supabase
-      .from("coding_sessions")
-      .insert({
-        user_id: user.id,
-        problem_title: problem.title,
-        problem_description: problem.description,
-        language,
-        status: "in_progress",
-      })
-      .select("id")
-      .single();
+    const data = createCodingSession(user.id, problem.title, problem.description, language);
     setCreating(false);
-    if (error || !data) {
-      toast.error(error?.message ?? "Could not start session");
-      return;
-    }
     navigate({ to: "/coding/$sessionId", params: { sessionId: data.id } });
   };
 

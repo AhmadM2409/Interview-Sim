@@ -30,25 +30,25 @@ function LandingPage() {
       <SiteHeader />
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
+      <section className="relative isolate overflow-hidden">
         <img
           src={heroBg}
           alt=""
           aria-hidden
           width={1920}
           height={1080}
-          className="pointer-events-none absolute inset-0 -z-20 h-full w-full object-cover opacity-70"
+          className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover opacity-60"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-background/30 via-background/60 to-background"
+          className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-b from-background/30 via-background/60 to-background"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10"
+          className="pointer-events-none absolute inset-0 z-10"
           style={{ backgroundImage: "var(--gradient-hero)" }}
         />
-        <div className="container mx-auto px-4 py-20 sm:py-28 lg:py-36">
+        <div className="relative z-20 container mx-auto px-4 py-20 sm:py-28 lg:py-36">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur">
               <Sparkles className="h-3.5 w-3.5 text-primary" />

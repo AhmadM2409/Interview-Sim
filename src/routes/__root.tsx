@@ -3,6 +3,7 @@ import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/r
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/hooks/useAuth";
 import { Toaster } from "@/components/ui/sonner";
+import heroBg from "@/assets/hero-bg.jpg";
 
 function NotFoundComponent() {
   return (
@@ -66,11 +67,23 @@ function RootShell({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+      <body className="min-h-screen bg-background">
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-20"
+          style={{ backgroundImage: `url(${heroBg})` }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{ backgroundImage: "var(--gradient-hero)" }}
+        />
+        <div className="relative z-10">
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </div>
         <Scripts />
       </body>
     </html>
