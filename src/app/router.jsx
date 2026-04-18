@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-router';
 import { HomePage } from '../modules/home/pages/HomePage.jsx';
 import { InterviewSetupPage } from '../modules/interview/pages/InterviewSetupPage.jsx';
+import logo from '../Gemini_Generated_Image_b1ig67b1ig67b1ig.png';
 import { InterviewSessionPage } from '../modules/interview/pages/InterviewSessionPage.jsx';
 import { InterviewSummaryPage } from '../modules/interview/pages/InterviewSummaryPage.jsx';
 import { CodingSetupPage } from '../modules/coding/pages/CodingSetupPage.jsx';
@@ -23,6 +24,7 @@ const RootLayout = () => {
       <header className="app-header">
         <div className="app-header-inner">
           <Link to="/" className="brand-title">
+            <img src={logo} alt="Interview logo" className="brand-logo" />
             AI Interview Simulator
           </Link>
 

@@ -1,20 +1,13 @@
 import { Link } from '@tanstack/react-router';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { EmptyState } from '../../shared/components/EmptyState.jsx';
+import logo from '../../../Gemini_Generated_Image_b1ig67b1ig67b1ig.png';
 
 export const HomePage = () => {
   const { isAuthenticated, loginWithDemo } = useAuth();
 
   return (
     <div className="stack">
-      <section className="stack" style={{ gap: 6 }}>
-        <h1 className="page-title">AI Interview Simulator</h1>
-        <p className="page-subtitle">
-          Practice technical interviews with structured scoring and focused feedback. Start an interview flow, run through
-          prompts, and complete with a final summary report.
-        </p>
-      </section>
-
       {!isAuthenticated ? (
         <section className="panel stack">
           <p className="kicker" style={{ margin: 0 }}>
@@ -32,7 +25,31 @@ export const HomePage = () => {
         </section>
       ) : null}
 
-      <section className="grid two">
+      <section className="stack" style={{ gap: 6, alignItems: 'center', textAlign: 'center', width: '100%' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 16 }}>
+          <img
+            src={logo}
+            alt="AI Interview Simulator"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              objectFit: 'cover',
+              border: '1px solid rgba(0, 0, 0, 0.08)',
+              background: 'var(--surface-soft)',
+            }}
+          />
+          <h1 className="page-title" style={{ margin: 0 }}>
+            AI Interview Simulator
+          </h1>
+        </div>
+        <p className="page-subtitle" style={{ margin: '0 auto', maxWidth: 700 }}>
+          Practice technical interviews with structured scoring and focused feedback. Start an interview flow, run through
+          prompts, and complete with a final summary report.
+        </p>
+      </section>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
         <article className="panel stack">
           <p className="kicker" style={{ margin: 0 }}>
             Interview Mode
@@ -62,7 +79,7 @@ export const HomePage = () => {
             </Link>
           </div>
         </article>
-      </section>
+      </div>
 
       <EmptyState
         title="No session history available yet"

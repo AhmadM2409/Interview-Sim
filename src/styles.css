@@ -1,18 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
-  --bg-1: #f8faf7;
-  --bg-2: #e8f1e7;
-  --surface: #ffffff;
-  --surface-soft: #f1f5ef;
+  --bg-1: #DAD2C8;
+  --bg-2: #F8F5F0;
+  --surface: #F8F5F0;
+  --surface-soft: #E8E0D8;
   --text: #13291e;
   --muted: #50635a;
-  --brand: #146552;
-  --brand-strong: #0e4b3d;
+  --brand: #A3B18A;
+  --brand-strong: #8A9B7A;
   --danger: #b42318;
   --warning: #b54708;
-  --border: #d6e1d6;
-  --shadow: 0 10px 30px rgba(19, 41, 30, 0.08);
+  --border: #DAD2C8;
+  --shadow: 0 10px 30px rgba(163, 177, 138, 0.08);
 }
 
 * {
@@ -29,7 +29,7 @@ body,
 body {
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at top left, #f9fff5, var(--bg-1) 40%, var(--bg-2) 100%);
+  background: radial-gradient(circle at top left, #F8F5F0, var(--bg-1) 40%, var(--bg-2) 100%);
 }
 
 a {
@@ -48,7 +48,7 @@ a {
   top: 0;
   z-index: 10;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(248, 245, 240, 0.92);
   backdrop-filter: blur(6px);
 }
 
@@ -63,10 +63,22 @@ a {
 }
 
 .brand-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-soft);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .nav-links {
@@ -128,6 +140,10 @@ a {
 
 .grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .stack {
