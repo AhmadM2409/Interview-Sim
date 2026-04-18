@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Brain, Mail, Phone } from "lucide-react";
+import { Brain, Mail } from "lucide-react";
 import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -14,34 +14,22 @@ export const Route = createFileRoute("/auth")({
       { title: "Sign in — AI Interview Simulator" },
       {
         name: "description",
-        content: "Sign in with Google or your phone number to start practicing interviews.",
+        content: "Sign in with Google or create an email account to start practicing interviews.",
       },
     ],
   }),
   component: AuthPage,
 });
 
-const phoneSchema = z
-  .string()
-  .trim()
-  .regex(/^\+[1-9]\d{6,14}$/, "Use international format, e.g. +14155552671");
 const emailSchema = z.string().trim().email("Enter a valid email address");
 const passwordSchema = z.string().trim().min(6, "Use at least 6 characters for the password");
-const otpSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{4,8}$/, "Enter the code from your text message");
 
 function AuthPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signInWithPhone, verifyPhoneOtp } =
-    useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
@@ -59,64 +47,57 @@ function AuthPage() {
     }
   };
 
-  const handleEmailPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const validateEmailPassword = () => {
     const parsedEmail = emailSchema.safeParse(email);
     if (!parsedEmail.success) {
       toast.error(parsedEmail.error.issues[0]?.message ?? "Invalid email");
-      return;
+      return null;
     }
 
     const parsedPassword = passwordSchema.safeParse(password);
     if (!parsedPassword.success) {
       toast.error(parsedPassword.error.issues[0]?.message ?? "Invalid password");
+      return null;
+    }
+
+    return {
+      email: parsedEmail.data,
+      password: parsedPassword.data,
+    };
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const values = validateEmailPassword();
+    if (!values) {
       return;
     }
 
     setSubmitting(true);
     try {
-      await signInWithEmail(parsedEmail.data, parsedPassword.data);
-      toast.success("Signed in successfully.");
+      await signInWithEmail(values.email, values.password);
+      toast.success("Logged in successfully.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not sign in");
+      toast.error(e instanceof Error ? e.message : "Could not log in");
       setSubmitting(false);
     }
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = phoneSchema.safeParse(phone);
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid phone number");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await signInWithPhone(parsed.data);
-      setPhone(parsed.data);
-      setOtpSent(true);
-      toast.success("Code sent! Check your messages.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not send code");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = otpSchema.safeParse(otp);
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid code");
+    const values = validateEmailPassword();
+    if (!values) {
       return;
     }
+
     setSubmitting(true);
     try {
-      await verifyPhoneOtp(phone, parsed.data);
-      // navigation handled by effect once session updates
+      await signUpWithEmail(values.email, values.password);
+      toast.success("Account created and signed in.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verification failed");
+      toast.error(e instanceof Error ? e.message : "Could not create account");
       setSubmitting(false);
     }
   };
@@ -152,12 +133,12 @@ function AuthPage() {
         </Button>
 
         <div className="mt-6 rounded-xl border border-dashed border-border/70 bg-muted/30 p-4 text-left">
-          <p className="text-sm font-medium">Testing login</p>
+          <p className="text-sm font-medium">Email account</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Use email and password to sign in or create an account automatically for testing.
+            Log in with your email, or quickly create a new account with the same form.
           </p>
 
-          <form onSubmit={handleEmailPassword} className="mt-4 space-y-3">
+          <form className="mt-4 space-y-3">
             <div className="space-y-2 text-left">
               <Label htmlFor="email" className="text-sm">
                 Email
@@ -188,72 +169,34 @@ function AuthPage() {
               />
             </div>
 
-            <Button type="submit" disabled={submitting} size="lg" className="w-full gap-2">
-              <Mail className="h-4 w-4" />
-              {submitting ? "Signing in..." : "Continue with email"}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={handleEmailLogin}
+                disabled={submitting}
+                size="lg"
+                variant="outline"
+                className="w-full gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                {submitting ? "Please wait..." : "Log in"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateAccount}
+                disabled={submitting}
+                size="lg"
+                className="w-full"
+              >
+                {submitting ? "Creating..." : "Create account"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New account creation signs in immediately when Supabase email confirmation is
+              disabled.
+            </p>
           </form>
         </div>
-
-        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" />
-          OR
-          <span className="h-px flex-1 bg-border" />
-        </div>
-
-        {!otpSent ? (
-          <form onSubmit={handleSendOtp} className="space-y-3 text-left">
-            <Label htmlFor="phone" className="text-sm">
-              Phone number
-            </Label>
-            <Input
-              id="phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="+14155552671"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              maxLength={16}
-              disabled={submitting}
-            />
-            <Button type="submit" disabled={submitting} size="lg" className="w-full gap-2">
-              <Phone className="h-4 w-4" />
-              {submitting ? "Sending..." : "Send code"}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyOtp} className="space-y-3 text-left">
-            <Label htmlFor="otp" className="text-sm">
-              Verification code
-            </Label>
-            <Input
-              id="otp"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="123456"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-              maxLength={8}
-              disabled={submitting}
-            />
-            <Button type="submit" disabled={submitting} size="lg" className="w-full">
-              {submitting ? "Verifying..." : "Verify & sign in"}
-            </Button>
-            <button
-              type="button"
-              className="w-full text-xs text-muted-foreground underline-offset-4 hover:underline"
-              onClick={() => {
-                setOtp("");
-                setOtpSent(false);
-              }}
-              disabled={submitting}
-            >
-              Use a different number
-            </button>
-          </form>
-        )}
 
         <p className="mt-6 text-xs text-muted-foreground">
           By continuing you agree to our terms of service.

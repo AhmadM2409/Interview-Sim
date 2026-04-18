@@ -9,8 +9,7 @@ type AuthContextValue = {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signInWithPhone: (phone: string) => Promise<void>;
-  verifyPhoneOtp: (phone: string, token: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -45,53 +44,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    const signUpResult = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (signUpResult.error) {
-      const message = signUpResult.error.message.toLowerCase();
-      const accountAlreadyExists =
-        message.includes("user already registered") ||
-        message.includes("already registered") ||
-        message.includes("already exists");
-
-      if (!accountAlreadyExists) {
-        throw signUpResult.error;
-      }
-
-      const signInResult = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInResult.error) throw signInResult.error;
-      return;
-    }
-
-    if (signUpResult.data.session) return;
-
     const signInResult = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (signInResult.error) {
-      throw new Error(
-        "Account created, but Supabase needs email confirmations disabled for immediate sign-in during testing.",
-      );
+      throw signInResult.error;
     }
   };
 
-  const signInWithPhone = async (phone: string) => {
-    const { error } = await supabase.auth.signInWithOtp({ phone });
-    if (error) throw error;
-  };
+  const signUpWithEmail = async (email: string, password: string) => {
+    const signUpResult = await supabase.auth.signUp({
+      email,
+      password,
+    });
 
-  const verifyPhoneOtp = async (phone: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({ phone, token, type: "sms" });
-    if (error) throw error;
+    if (signUpResult.error) {
+      throw signUpResult.error;
+    }
+
+    if (signUpResult.data.session) return;
+
+    const fallbackSignIn = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (fallbackSignIn.error) {
+      throw new Error(
+        "Account created. For instant login after signup, disable email confirmation in Supabase Auth settings.",
+      );
+    }
   };
 
   const signOut = async () => {
@@ -106,8 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signInWithGoogle,
         signInWithEmail,
-        signInWithPhone,
-        verifyPhoneOtp,
+        signUpWithEmail,
         signOut,
       }}
     >
