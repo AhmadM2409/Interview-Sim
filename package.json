@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "sh -c '(lsof -ti tcp:3000 -sTCP:LISTEN 2>/dev/null; lsof -ti tcp:3001 -sTCP:LISTEN 2>/dev/null) | tr \" \" \"\\n\" | sort -u | xargs -r kill -9; vite dev --port 3000 --strictPort'",
+    "dev": "vite dev --port 3000 --strictPort",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
