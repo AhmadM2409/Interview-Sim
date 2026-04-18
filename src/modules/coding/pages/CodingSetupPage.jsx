@@ -1,0 +1,65 @@
+import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { useAuth } from '../../auth/AuthContext.jsx';
+import { initializeCodingSetup } from '../api/codingApi.js';
+import { toUiError } from '../../shared/api/client.js';
+
+export const CodingSetupPage = () => {
+  const { token, isAuthenticated, loginWithDemo } = useAuth();
+  const [language, setLanguage] = useState('javascript');
+  const [problem, setProblem] = useState('array-transform');
+
+  const setupMutation = useMutation({
+    mutationFn: () => initializeCodingSetup({ token, language, problem }),
+  });
+
+  if (!isAuthenticated) {
+    return (
+      <section className="panel stack">
+        <strong>You need to sign in first.</strong>
+        <div>
+          <button type="button" onClick={loginWithDemo}>
+            Sign In (Demo)
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="stack">
+      <section className="stack" style={{ gap: 6 }}>
+        <h1 className="page-title">Coding Setup</h1>
+        <p className="page-subtitle">Prepare your coding interview mode. Editor/terminal implementation is intentionally pending.</p>
+      </section>
+
+      <section className="panel stack">
+        <label>
+          Language
+          <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={setupMutation.isPending}>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+          </select>
+        </label>
+
+        <label>
+          Problem Track
+          <select value={problem} onChange={(event) => setProblem(event.target.value)} disabled={setupMutation.isPending}>
+            <option value="array-transform">Array Transform</option>
+            <option value="graph-traversal">Graph Traversal</option>
+            <option value="api-design">API Design</option>
+          </select>
+        </label>
+
+        {setupMutation.isError ? <div className="alert">{toUiError(setupMutation.error)}</div> : null}
+        {setupMutation.isSuccess ? <div className="alert warning">{setupMutation.data.message}</div> : null}
+
+        <button type="button" onClick={() => setupMutation.mutate()} disabled={setupMutation.isPending}>
+          {setupMutation.isPending ? 'Preparing coding mode...' : 'Continue to Coding Mode'}
+        </button>
+      </section>
+    </div>
+  );
+};

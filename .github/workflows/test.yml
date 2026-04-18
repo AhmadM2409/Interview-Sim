@@ -1,0 +1,23 @@
+name: CI Enforcement Pipeline
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-enforcement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:phase0
+      - run: npm run test:phase1
+      - run: npm run test:phase2
+      - run: npm run test:phase3
+      - run: npm run test:phase4
+      - run: npm run test:phase5
+      - run: npm run test:phase6

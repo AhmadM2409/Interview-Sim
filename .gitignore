@@ -1,0 +1,12 @@
+node_modules/
+coverage/
+.vitest/
+dist/
+*.log
+.env
+
+
+.env
+.env.*
+node_modules
+dist
