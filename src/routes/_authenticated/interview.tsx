@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mic, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -37,13 +37,23 @@ function InterviewSetupPage() {
   const navigate = useNavigate();
   const [role, setRole] = useState<string>("Software Engineer");
   const [creating, setCreating] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const startInterview = async () => {
-    if (!user) return;
+    if (!user) {
+      setStartError("Not signed in — please refresh and log in again.");
+      return;
+    }
+    setStartError(null);
     setCreating(true);
-    const session = createInterviewSession(user.id, role);
-    setCreating(false);
-    navigate({ to: "/interview/$sessionId", params: { sessionId: session.id } });
+    try {
+      const session = createInterviewSession(user.id, role);
+      await navigate({ to: "/interview/$sessionId", params: { sessionId: session.id } });
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "Failed to start interview");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -89,10 +99,15 @@ function InterviewSetupPage() {
           <ArrowRight className="h-4 w-4" />
         </Button>
 
+        {startError && (
+          <p className="mt-3 text-center text-sm text-destructive">{startError}</p>
+        )}
+
         <p className="mt-4 text-center text-xs text-muted-foreground">
           You'll need to allow microphone access.
         </p>
       </div>
+      <Outlet />
     </main>
   );
 }
