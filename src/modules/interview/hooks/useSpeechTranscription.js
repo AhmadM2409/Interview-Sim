@@ -11,6 +11,7 @@ const getSpeechRecognitionCtor = () => {
 export const useSpeechTranscription = ({ value, onChange }) => {
   const recognitionRef = useRef(null);
   const transcriptRef = useRef(value);
+  const onChangeRef = useRef(onChange);
   const recognitionSessionRef = useRef({
     baseTranscript: '',
     finalTranscript: '',
@@ -24,6 +25,10 @@ export const useSpeechTranscription = ({ value, onChange }) => {
   useEffect(() => {
     transcriptRef.current = value;
   }, [value]);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     if (!speechCtor) {
@@ -66,7 +71,7 @@ export const useSpeechTranscription = ({ value, onChange }) => {
         .join(' ')
         .trim();
 
-      onChange(nextTranscript);
+      onChangeRef.current(nextTranscript);
     };
 
     recognition.onerror = (event) => {
@@ -97,7 +102,7 @@ export const useSpeechTranscription = ({ value, onChange }) => {
       }
       recognitionRef.current = null;
     };
-  }, [onChange, speechCtor]);
+  }, [speechCtor]);
 
   const startListening = ({ disabled, isSubmitting }) => {
     if (!recognitionRef.current || disabled || isSubmitting) {

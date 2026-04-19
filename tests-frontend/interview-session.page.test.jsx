@@ -57,8 +57,12 @@ class MockSpeechRecognition {
     this.onresult = null;
     this.onerror = null;
     this.onend = null;
-    this.start = vi.fn();
+    this.isStarted = false;
+    this.start = vi.fn(() => {
+      this.isStarted = true;
+    });
     this.stop = vi.fn(() => {
+      this.isStarted = false;
       if (this.onend) {
         this.onend();
       }
@@ -70,6 +74,10 @@ class MockSpeechRecognition {
 const emitRecognitionResult = (chunks) => {
   if (!mockRecognitionInstance?.onresult) {
     throw new Error('Mock speech recognition was not initialized');
+  }
+
+  if (!mockRecognitionInstance.isStarted) {
+    throw new Error('Mock speech recognition is not actively listening');
   }
 
   const results = chunks.map((chunk) => {
@@ -353,6 +361,53 @@ describe('Interview session page', () => {
           transcript: 'I would use a dictionary keyed by sorted letters and handle empty input.',
         }),
       );
+    });
+  });
+
+  it('keeps coding interview speech recognition active across multiple spoken chunks and editor updates', async () => {
+    const user = userEvent.setup();
+    window.SpeechRecognition = MockSpeechRecognition;
+    getCurrentInterviewQuestion.mockResolvedValue({
+      questionId: 'q-code-continuous-speech',
+      questionText: 'Implement a function that finds duplicates.',
+      order: 2,
+      type: 'coding',
+      language: 'javascript',
+    });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-code-continuous-speech" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/implement a function that finds duplicates/i);
+    await user.click(screen.getByRole('button', { name: /open coding environment/i }));
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+
+    const activeRecognition = mockRecognitionInstance;
+
+    emitRecognitionResult([
+      { transcript: 'I would', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/reasoning transcript/i)).toHaveValue('I would');
+    });
+
+    fireEvent.change(screen.getByLabelText(/code editor/i), {
+      target: {
+        value: 'function solve(values) { return values; }',
+      },
+    });
+
+    expect(screen.getByLabelText(/reasoning transcript/i)).toHaveValue('I would');
+    expect(mockRecognitionInstance).toBe(activeRecognition);
+    expect(activeRecognition.stop).not.toHaveBeenCalled();
+
+    emitRecognitionResult([
+      { transcript: 'I would', isFinal: true },
+      { transcript: 'use a set', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/reasoning transcript/i)).toHaveValue('I would use a set');
     });
   });
 
