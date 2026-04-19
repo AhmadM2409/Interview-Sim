@@ -10,12 +10,14 @@ export const seedActiveSession = async (role, options = {}) => {
   const status = options.status ?? 'ACTIVE';
   const level = options.level ?? 'Mid';
   const isProcessing = options.isProcessing ? 1 : 0;
+  const userSub = options.userSub ?? 'google-oauth2|mock-user';
 
   await run(
-    `INSERT INTO sessions (id, role, level, status, is_processing, summary_json, current_question_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_sub, role, level, status, is_processing, summary_json, current_question_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       sessionId,
+      userSub,
       role,
       level,
       status,
@@ -28,9 +30,17 @@ export const seedActiveSession = async (role, options = {}) => {
   );
 
   await run(
-    `INSERT INTO questions (id, session_id, question_text, order_index, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [questionId, sessionId, options.questionText ?? 'Tell me about a recent project.', options.orderIndex ?? 1, createdAt],
+    `INSERT INTO questions (id, session_id, question_text, question_type, language, order_index, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      questionId,
+      sessionId,
+      options.questionText ?? 'Tell me about a recent project.',
+      options.questionType ?? 'verbal',
+      options.language ?? null,
+      options.orderIndex ?? 1,
+      createdAt,
+    ],
   );
 
   return { sessionId, questionId };

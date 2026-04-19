@@ -11,6 +11,30 @@ const normalizeIssues = (error) => {
   return [{ message: error?.message ?? 'Unknown validation error' }];
 };
 
+const actionFailureMessage = (actionName) => {
+  if (actionName === 'generateSummary') {
+    return 'Summary generation failed after schema validation retries';
+  }
+
+  if (actionName === 'generateQuestion') {
+    return 'Question generation failed after schema validation retries';
+  }
+
+  return 'Evaluation failed after schema validation retries';
+};
+
+const actionProviderUnavailableMessage = (actionName, providerMessage) => {
+  if (actionName === 'generateSummary') {
+    return `Summary provider unavailable: ${providerMessage}`;
+  }
+
+  if (actionName === 'generateQuestion') {
+    return `Question provider unavailable: ${providerMessage}`;
+  }
+
+  return `Evaluation provider unavailable: ${providerMessage}`;
+};
+
 const runWithValidationRetry = async ({ actionName, sessionId, schema, runner }) => {
   let attempt = 0;
   let lastProviderError = null;
@@ -44,7 +68,7 @@ const runWithValidationRetry = async ({ actionName, sessionId, schema, runner })
             : 503;
         const providerMessage =
           lastProviderError?.publicMessage ??
-          `Evaluation provider unavailable: ${lastProviderError?.message ?? 'Unknown provider error'}`;
+          actionProviderUnavailableMessage(actionName, lastProviderError?.message ?? 'Unknown provider error');
         throw new HttpError(
           statusCode,
           providerMessage,
@@ -81,12 +105,12 @@ const runWithValidationRetry = async ({ actionName, sessionId, schema, runner })
       );
 
       if (attempt >= 2) {
-        throw new HttpError(500, 'Evaluation failed after schema validation retries');
+        throw new HttpError(500, actionFailureMessage(actionName));
       }
     }
   }
 
-  throw new HttpError(500, 'Evaluation failed after schema validation retries');
+  throw new HttpError(500, actionFailureMessage(actionName));
 };
 
 export const generateQuestionWithRetry = async (role, sessionId, context = '') =>

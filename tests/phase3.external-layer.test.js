@@ -48,7 +48,7 @@ describe('Phase 3 LLM and Tavily layer', () => {
     vi.spyOn(llmProvider, 'generateQuestion').mockResolvedValue({ nope: true });
 
     await expect(generateQuestionWithRetry('SRE', 'session-234')).rejects.toThrow(
-      'Evaluation failed after schema validation retries',
+      'Question generation failed after schema validation retries',
     );
 
     expect(warnSpy).toHaveBeenCalledTimes(2);

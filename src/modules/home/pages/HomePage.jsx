@@ -82,8 +82,8 @@ export const HomePage = () => {
       </div>
 
       <EmptyState
-        title="No session history available yet"
-        message="A history endpoint is not currently exposed by the backend contract, so this dashboard only shows quick start actions."
+        title="Start your next attempt"
+        message="Session history is available on the interview summary page after completion. Use the shortcuts above to begin a new run."
       />
     </div>
   );

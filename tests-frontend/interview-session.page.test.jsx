@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InterviewSessionPage } from '../src/modules/interview/pages/InterviewSessionPage.jsx';
 import { ApiError } from '../src/modules/shared/api/client.js';
 import { renderWithProviders } from './test-utils.jsx';
@@ -9,14 +9,28 @@ import {
   completeInterviewSession,
   evaluateInterviewAnswer,
   getCurrentInterviewQuestion,
+  getCurrentQuestionAudio,
   getNextInterviewQuestion,
 } from '../src/modules/interview/api/interviewApi.js';
+
+vi.mock('@monaco-editor/react', () => ({
+  default: ({ value, onChange, language, height }) => (
+    <textarea
+      aria-label="Code editor"
+      data-language={language}
+      data-height={height}
+      value={value}
+      onChange={(event) => onChange?.(event.target.value)}
+    />
+  ),
+}));
 
 vi.mock('../src/modules/interview/api/interviewApi.js', () => ({
   getCurrentInterviewQuestion: vi.fn(),
   evaluateInterviewAnswer: vi.fn(),
   getNextInterviewQuestion: vi.fn(),
   completeInterviewSession: vi.fn(),
+  getCurrentQuestionAudio: vi.fn(),
 }));
 
 const createDeferred = () => {
@@ -31,11 +45,62 @@ const createDeferred = () => {
   return { promise, resolve, reject };
 };
 
+let mockRecognitionInstance = null;
+
+class MockSpeechRecognition {
+  constructor() {
+    this.continuous = false;
+    this.interimResults = false;
+    this.lang = 'en-US';
+    this.onresult = null;
+    this.onerror = null;
+    this.onend = null;
+    this.start = vi.fn();
+    this.stop = vi.fn(() => {
+      if (this.onend) {
+        this.onend();
+      }
+    });
+    mockRecognitionInstance = this;
+  }
+}
+
+const emitRecognitionResult = (chunks) => {
+  if (!mockRecognitionInstance?.onresult) {
+    throw new Error('Mock speech recognition was not initialized');
+  }
+
+  const results = chunks.map((chunk) => {
+    const alternatives = [{ transcript: chunk.transcript }];
+    alternatives.isFinal = chunk.isFinal;
+    return alternatives;
+  });
+
+  mockRecognitionInstance.onresult({
+    resultIndex: 0,
+    results,
+  });
+};
+
 describe('Interview session page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRecognitionInstance = null;
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
     getNextInterviewQuestion.mockResolvedValue({ questionId: 'q2', questionText: 'Next question', order: 2 });
     completeInterviewSession.mockResolvedValue({ status: 'COMPLETED', summary: {} });
+    getCurrentQuestionAudio.mockResolvedValue({
+      audioBase64: 'bW9jay1hdWRpbw==',
+      mimeType: 'audio/mpeg',
+      voiceId: 'voice-1',
+    });
+  });
+
+  afterEach(() => {
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
+    mockRecognitionInstance = null;
   });
 
   it('renders loading then shows current question', async () => {
@@ -90,5 +155,179 @@ describe('Interview session page', () => {
     });
 
     await screen.findByText(/solid answer/i);
+  });
+
+  it('shows non-blocking microphone unavailable message when browser STT is unsupported', async () => {
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-5" onCompleted={vi.fn()} />);
+
+    expect(await screen.findByText(/question one/i)).toBeInTheDocument();
+    expect(screen.getByText(/microphone input is not available in this browser/i)).toBeInTheDocument();
+  });
+
+  it('requests ElevenLabs audio for current question and surfaces playback failure', async () => {
+    const user = userEvent.setup();
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+    getCurrentQuestionAudio.mockRejectedValue(new ApiError('Question audio generation failed', 502));
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-6" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/question one/i);
+    await user.click(screen.getByRole('button', { name: /play question audio/i }));
+
+    await waitFor(() => {
+      expect(getCurrentQuestionAudio).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByText(/question audio generation failed/i)).toBeInTheDocument();
+  });
+
+  it('renders a playable audio element after question audio loads successfully', async () => {
+    const user = userEvent.setup();
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-audio" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/question one/i);
+    await user.click(screen.getByRole('button', { name: /play question audio/i }));
+
+    await waitFor(() => {
+      expect(getCurrentQuestionAudio).toHaveBeenCalledTimes(1);
+    });
+
+    const audio = screen.getByText(/your browser does not support audio playback/i).closest('audio');
+    expect(audio).not.toBeNull();
+    expect(audio?.getAttribute('src')).toContain('data:audio/mpeg;base64,');
+  });
+
+  it('keeps speech recognition transcript clean without duplicating interim and final fragments', async () => {
+    const user = userEvent.setup();
+    window.SpeechRecognition = MockSpeechRecognition;
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-7" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/question one/i);
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+
+    emitRecognitionResult([
+      { transcript: 'I do not know', isFinal: false },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('I do not know');
+    });
+
+    emitRecognitionResult([
+      { transcript: 'I do not know the answer to this', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('I do not know the answer to this');
+    });
+  });
+
+  it('retry answer clears stale speech transcript so a new recording starts cleanly', async () => {
+    const user = userEvent.setup();
+    window.SpeechRecognition = MockSpeechRecognition;
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-8" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/question one/i);
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+
+    emitRecognitionResult([
+      { transcript: 'First attempt', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('First attempt');
+    });
+
+    await user.click(screen.getByRole('button', { name: /retry answer/i }));
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+    emitRecognitionResult([
+      { transcript: 'Second attempt', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('Second attempt');
+    });
+  });
+
+  it('allows manual editing after speech recognition populates the transcript', async () => {
+    const user = userEvent.setup();
+    window.SpeechRecognition = MockSpeechRecognition;
+    getCurrentInterviewQuestion.mockResolvedValue({ questionId: 'q1', questionText: 'Question one', order: 1 });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-9" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/question one/i);
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+
+    emitRecognitionResult([
+      { transcript: 'Generated by speech', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('Generated by speech');
+    });
+
+    await user.clear(screen.getByLabelText(/your answer/i));
+    await user.type(screen.getByLabelText(/your answer/i), 'Edited manually');
+
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('Edited manually');
+  });
+
+  it('renders a coding editor for coding questions and submits code instead of transcript', async () => {
+    const user = userEvent.setup();
+    getCurrentInterviewQuestion.mockResolvedValue({
+      questionId: 'q-code',
+      questionText: 'Write a JavaScript function that reverses a string.',
+      order: 2,
+      type: 'coding',
+      language: 'javascript',
+    });
+    evaluateInterviewAnswer.mockResolvedValue({
+      questionId: 'q-code',
+      scores: {
+        technicalScore: 84,
+        communicationScore: 72,
+        feedback: 'Good start with a correct implementation.',
+      },
+    });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-code" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/write a javascript function that reverses a string/i);
+    expect(screen.queryByLabelText(/your answer/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/code editor/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/code editor/i), {
+      target: {
+        value: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
+      },
+    });
+    await user.click(screen.getByRole('button', { name: /run code/i }));
+
+    expect(await screen.findByText(/code ran successfully/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /submit code/i }));
+
+    await waitFor(() => {
+      expect(evaluateInterviewAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'session-code',
+          code: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
+          language: 'javascript',
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/good start with a correct implementation/i)).toBeInTheDocument();
   });
 });

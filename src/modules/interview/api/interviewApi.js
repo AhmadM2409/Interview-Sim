@@ -12,11 +12,20 @@ export const getCurrentInterviewQuestion = ({ token, sessionId }) =>
     token,
   });
 
-export const evaluateInterviewAnswer = ({ token, sessionId, transcript }) =>
+export const getCurrentQuestionAudio = ({ token, sessionId }) =>
+  requestJson(`/api/interview/${sessionId}/question/current/audio`, {
+    token,
+  });
+
+export const evaluateInterviewAnswer = ({ token, sessionId, transcript, code, language }) =>
   requestJson(`/api/interview/${sessionId}/evaluate`, {
     method: 'POST',
     token,
-    body: { transcript },
+    body: {
+      ...(typeof transcript === 'string' ? { transcript } : {}),
+      ...(typeof code === 'string' ? { code } : {}),
+      ...(language ? { language } : {}),
+    },
   });
 
 export const getNextInterviewQuestion = ({ token, sessionId }) =>
@@ -33,5 +42,10 @@ export const completeInterviewSession = ({ token, sessionId }) =>
 
 export const getInterviewSummary = ({ token, sessionId }) =>
   requestJson(`/api/interview/${sessionId}/summary`, {
+    token,
+  });
+
+export const getInterviewHistory = ({ token }) =>
+  requestJson('/api/interview/history', {
     token,
   });

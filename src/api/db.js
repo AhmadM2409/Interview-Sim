@@ -62,6 +62,7 @@ export const createNewDBInstance = async () => {
 
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
+        user_sub TEXT NOT NULL DEFAULT 'google-oauth2|mock-user',
         role TEXT NOT NULL,
         level TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'ACTIVE',
@@ -76,6 +77,8 @@ export const createNewDBInstance = async () => {
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         question_text TEXT NOT NULL,
+        question_type TEXT NOT NULL DEFAULT 'verbal',
+        language TEXT,
         order_index INTEGER NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -86,6 +89,8 @@ export const createNewDBInstance = async () => {
         session_id TEXT NOT NULL,
         question_id TEXT NOT NULL,
         answer_text TEXT NOT NULL,
+        answer_type TEXT NOT NULL DEFAULT 'verbal',
+        language TEXT,
         technical_score INTEGER,
         communication_score INTEGER,
         feedback TEXT,

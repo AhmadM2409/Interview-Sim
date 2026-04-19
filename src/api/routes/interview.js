@@ -8,8 +8,10 @@ import {
   createSession,
   createNextQuestion,
   evaluateSessionAnswer,
+  getCurrentQuestionAudio,
   getCurrentQuestion,
   getSummary,
+  listSessionHistory,
   withSessionLock,
 } from '../services/interview-service.js';
 import { evaluateRequestSchema } from '../schemas.js';
@@ -19,8 +21,20 @@ const router = Router();
 router.post('/session', async (req, res, next) => {
   try {
     const payload = createSessionSchema.parse(req.body ?? {});
-    const result = await createSession(payload);
+    const result = await createSession({
+      ...payload,
+      userSub: req.user?.sub,
+    });
 
+    res.status(200).json(successEnvelope(result));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/history', async (req, res, next) => {
+  try {
+    const result = await listSessionHistory(req.user?.sub);
     res.status(200).json(successEnvelope(result));
   } catch (error) {
     next(error);
@@ -31,6 +45,15 @@ router.get('/:sessionId/question/current', async (req, res, next) => {
   try {
     const question = await getCurrentQuestion(req.params.sessionId);
     res.status(200).json(successEnvelope(question));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:sessionId/question/current/audio', async (req, res, next) => {
+  try {
+    const audio = await getCurrentQuestionAudio(req.params.sessionId);
+    res.status(200).json(successEnvelope(audio));
   } catch (error) {
     next(error);
   }
@@ -78,7 +101,7 @@ router.post('/:sessionId/evaluate', async (req, res, next) => {
     const forceTavilyTimeout = req.headers['x-test-force-tavily-timeout'] === 'true';
     const forceInternalError = req.headers['x-test-force-internal-error'] === 'true';
 
-    const result = await evaluateSessionAnswer(req.params.sessionId, payload.transcript, {
+    const result = await evaluateSessionAnswer(req.params.sessionId, payload, {
       forceTavilyTimeout,
       forceInternalError,
     });
@@ -107,7 +130,21 @@ router.post('/:sessionId/evaluate', async (req, res, next) => {
 
 router.post('/:sessionId/complete', async (req, res, next) => {
   try {
+    logger.info(
+      {
+        checkpoint: 'complete.request.received',
+        sessionId: req.params.sessionId,
+      },
+      'Complete request received',
+    );
     const result = await completeSession(req.params.sessionId);
+    logger.info(
+      {
+        checkpoint: 'complete.response.returned',
+        sessionId: req.params.sessionId,
+      },
+      'Complete response returned',
+    );
     res.status(200).json(successEnvelope(result));
   } catch (error) {
     next(error);

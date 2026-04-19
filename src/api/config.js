@@ -32,4 +32,6 @@ export const config = {
   mistralApiKey: requireAnyEnv(['MISTRAL_API_KEY', 'GEMINI_API_KEY']),
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-small-latest',
   elevenLabsApiKey: requireEnv('ELEVENLABS_API_KEY'),
+  // TODO: Wire this to a user-selectable voice field once a voice selector is added to setup UI.
+  elevenLabsDefaultVoiceId: process.env.ELEVENLABS_DEFAULT_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL',
 };

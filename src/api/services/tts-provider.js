@@ -1,8 +1,9 @@
 import { config } from '../config.js';
 
 export async function synthesizeSpeech(text, voiceId) {
+  const targetVoice = voiceId || config.elevenLabsDefaultVoiceId;
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${targetVoice}`,
     {
       method: 'POST',
       headers: {
@@ -17,9 +18,9 @@ export async function synthesizeSpeech(text, voiceId) {
   );
 
   if (!response.ok) {
-    throw new Error(`ElevenLabs request failed: ${response.status}`);
+    const errorBody = await response.text();
+    throw new Error(`ElevenLabs request failed: ${response.status} ${errorBody}`.trim());
   }
 
   return Buffer.from(await response.arrayBuffer());
 }
-
