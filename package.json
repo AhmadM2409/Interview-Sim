@@ -32,6 +32,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-oauth2-jwt-bearer": "^1.8.0",
+    "jsonwebtoken": "^9.0.3",
     "monaco-editor": "^0.55.1",
     "pino": "^10.3.1",
     "react": "^19.2.5",
