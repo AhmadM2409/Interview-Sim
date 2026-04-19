@@ -17,11 +17,12 @@ export const getCurrentQuestionAudio = ({ token, sessionId }) =>
     token,
   });
 
-export const evaluateInterviewAnswer = ({ token, sessionId, transcript, code, language }) =>
+export const evaluateInterviewAnswer = ({ token, sessionId, type, transcript, code, language }) =>
   requestJson(`/api/interview/${sessionId}/evaluate`, {
     method: 'POST',
     token,
     body: {
+      ...(type ? { type } : {}),
       ...(typeof transcript === 'string' ? { transcript } : {}),
       ...(typeof code === 'string' ? { code } : {}),
       ...(language ? { language } : {}),

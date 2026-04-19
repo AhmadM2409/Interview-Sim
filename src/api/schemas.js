@@ -7,24 +7,17 @@ export const createSessionSchema = z.object({
   level: z.string().trim().min(1),
 });
 
-export const evaluateRequestSchema = z
-  .object({
-    transcript: z.string().optional(),
-    code: z.string().optional(),
-    language: z.string().trim().min(1).optional().nullable(),
-  })
-  .superRefine((value, ctx) => {
-    const transcript = typeof value.transcript === 'string' ? value.transcript.trim() : '';
-    const code = typeof value.code === 'string' ? value.code.trim() : '';
-
-    if (!transcript && !code) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Either transcript or code is required',
-        path: ['transcript'],
-      });
-    }
-  });
+export const evaluateRequestSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('verbal'),
+    transcript: z.string().trim().min(1, 'Transcript is required for verbal answers'),
+  }),
+  z.object({
+    type: z.literal('coding'),
+    code: z.string().trim().min(1, 'Code is required for coding answers'),
+    language: z.string().trim().min(1, 'Language is required for coding answers'),
+  }),
+]);
 
 export const llmQuestionSchema = z.object({
   questionText: z.string().trim().min(1),

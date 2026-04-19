@@ -36,7 +36,7 @@ describe('Phase 5 evaluation engine', () => {
     const response = await request(app)
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ transcript: 'I improved query performance by 60 percent through indexing and batching.' });
+      .send({ type: 'verbal', transcript: 'I improved query performance by 60 percent through indexing and batching.' });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -73,7 +73,7 @@ describe('Phase 5 evaluation engine', () => {
     const response = await request(app)
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ transcript: 'WTRF' });
+      .send({ type: 'verbal', transcript: 'WTRF' });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -93,7 +93,7 @@ describe('Phase 5 evaluation engine', () => {
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
       .set('x-test-force-tavily-timeout', 'true')
-      .send({ transcript: 'test' });
+      .send({ type: 'verbal', transcript: 'test' });
 
     expect(response.status).toBe(504);
     expect(response.body).toEqual({
@@ -173,18 +173,19 @@ describe('Phase 5 evaluation engine', () => {
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
       .send({
+        type: 'verbal',
         transcript: 'I redesigned our caching and API pagination strategy and cut p95 latency by 40 percent.',
       });
 
     await request(app)
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ transcript: 'ok' });
+      .send({ type: 'verbal', transcript: 'ok' });
 
     await request(app)
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ transcript: 'offensive irrelevant answer' });
+      .send({ type: 'verbal', transcript: 'offensive irrelevant answer' });
 
     const complete = await request(app)
       .post(`/api/interview/${sessionId}/complete`)
@@ -257,6 +258,7 @@ describe('Phase 5 evaluation engine', () => {
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
       .send({
+        type: 'verbal',
         transcript: 'I led a zero-downtime migration and reduced release rollback risk with staged rollouts.',
       });
 
@@ -264,6 +266,7 @@ describe('Phase 5 evaluation engine', () => {
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
       .send({
+        type: 'verbal',
         transcript: "I don't know.",
       });
 
@@ -396,5 +399,25 @@ describe('Phase 5 evaluation engine', () => {
     expect(weakSummary.improvements.join(' ')).toContain('I do not know');
     expect(incompleteSummary.feedbackSummary).toContain('before enough answer data was captured');
     expect(strongSummary.strengths).not.toEqual(weakSummary.strengths);
+  });
+
+  it('rejects coding payloads that do not match the current verbal question type', async () => {
+    const { sessionId } = await seedActiveSession('Frontend Engineer');
+
+    const response = await request(app)
+      .post(`/api/interview/${sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code: 'function solve() {}',
+        language: 'javascript',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      success: false,
+      data: null,
+      error: 'Answer type coding does not match current verbal question',
+    });
   });
 });

@@ -12,21 +12,41 @@ import {
   getNextInterviewQuestion,
 } from '../api/interviewApi.js';
 import { AudioPlayer } from '../components/AudioPlayer.jsx';
-import { CodingWorkspace } from '../components/CodingWorkspace.jsx';
+import { CodingEditor } from '../components/CodingEditor.jsx';
 import { FeedbackCard } from '../components/FeedbackCard.jsx';
 import { QuestionCard } from '../components/QuestionCard.jsx';
 import { TranscriptionBox } from '../components/TranscriptionBox.jsx';
 
 const isLockError = (error) => error instanceof ApiError && error.status === 409;
+const codingQuestionPattern = /\b(code|implement|function|write|algorithm)\b/i;
+const inferQuestionType = (question) => {
+  if (question?.type === 'coding' || question?.type === 'verbal') {
+    return question.type;
+  }
+
+  return codingQuestionPattern.test(question?.questionText ?? '') ? 'coding' : 'verbal';
+};
+
+const normalizeQuestion = (question) => {
+  if (!question) {
+    return question;
+  }
+
+  const type = inferQuestionType(question);
+
+  return {
+    ...question,
+    type,
+    language: type === 'coding' ? question.language ?? 'javascript' : null,
+  };
+};
+
 const buildStarterCode = (language = 'javascript') => {
   if (language === 'javascript') {
     return [
-      'function solve(input) {',
-      '  // Write your solution here.',
-      '  return input;',
+      'function solve() {',
+      '  // write your code here',
       '}',
-      '',
-      "console.log(solve('example'));",
     ].join('\n');
   }
 
@@ -46,23 +66,12 @@ const formatConsoleValue = (value) => {
 };
 
 const runJavaScriptSnippet = (source) => {
-  const outputLines = [];
-  const runnerConsole = {
-    log: (...values) => outputLines.push(values.map(formatConsoleValue).join(' ')),
-    error: (...values) => outputLines.push(values.map(formatConsoleValue).join(' ')),
-    warn: (...values) => outputLines.push(values.map(formatConsoleValue).join(' ')),
-  };
-
   try {
-    const result = new Function('console', `"use strict";\n${source}`)(runnerConsole);
+    const result = window.eval(source);
 
-    if (typeof result !== 'undefined') {
-      outputLines.push(formatConsoleValue(result));
-    }
-
-    return outputLines.length > 0
-      ? outputLines.join('\n')
-      : 'Code ran successfully with no console output.';
+    return typeof result === 'undefined'
+      ? 'Code ran successfully.'
+      : formatConsoleValue(result);
   } catch (error) {
     return `Execution failed: ${error?.message ?? 'Unknown error'}`;
   }
@@ -73,6 +82,7 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   const [transcript, setTranscript] = useState('');
   const [codeDrafts, setCodeDrafts] = useState({});
   const [codeOutputs, setCodeOutputs] = useState({});
+  const [openCodingEditors, setOpenCodingEditors] = useState({});
   const [feedback, setFeedback] = useState(null);
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [notice, setNotice] = useState('');
@@ -88,17 +98,18 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
 
   useEffect(() => {
     if (questionQuery.data) {
-      setActiveQuestion(questionQuery.data);
+      const normalizedQuestion = normalizeQuestion(questionQuery.data);
+      setActiveQuestion(normalizedQuestion);
       setAudioSrc('');
-      if (questionQuery.data.type === 'coding') {
+      if (normalizedQuestion.type === 'coding') {
         setCodeDrafts((current) => {
-          if (current[questionQuery.data.questionId]) {
+          if (current[normalizedQuestion.questionId]) {
             return current;
           }
 
           return {
             ...current,
-            [questionQuery.data.questionId]: buildStarterCode(questionQuery.data.language ?? 'javascript'),
+            [normalizedQuestion.questionId]: buildStarterCode(normalizedQuestion.language ?? 'javascript'),
           };
         });
       }
@@ -118,10 +129,11 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
         ? evaluateInterviewAnswer({
             token,
             sessionId,
+            type: 'coding',
             code: activeCode,
             language: activeQuestionLanguage,
           })
-        : evaluateInterviewAnswer({ token, sessionId, transcript: transcript.trim() }),
+        : evaluateInterviewAnswer({ token, sessionId, type: 'verbal', transcript: transcript.trim() }),
     onSuccess: (data) => {
       setFeedback(data.scores);
       setNotice(activeQuestionType === 'coding' ? 'Code evaluated successfully.' : 'Answer evaluated successfully.');
@@ -131,14 +143,16 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   const nextMutation = useMutation({
     mutationFn: () => getNextInterviewQuestion({ token, sessionId }),
     onSuccess: (data) => {
-      setActiveQuestion(data);
+      const normalizedQuestion = normalizeQuestion(data);
+      setActiveQuestion(normalizedQuestion);
       setTranscript('');
       setFeedback(null);
       setNotice('Moved to next question.');
-      if (data.type === 'coding') {
+      if (normalizedQuestion.type === 'coding') {
         setCodeDrafts((current) => ({
           ...current,
-          [data.questionId]: current[data.questionId] ?? buildStarterCode(data.language ?? 'javascript'),
+          [normalizedQuestion.questionId]:
+            current[normalizedQuestion.questionId] ?? buildStarterCode(normalizedQuestion.language ?? 'javascript'),
         }));
       }
     },
@@ -247,6 +261,19 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
     }));
   };
 
+  const handleOpenCodingEnvironment = () => {
+    if (!activeQuestion?.questionId) {
+      return;
+    }
+
+    setOpenCodingEditors((current) => ({
+      ...current,
+      [activeQuestion.questionId]: true,
+    }));
+  };
+
+  const isCodingEditorOpen = activeQuestion?.questionId ? Boolean(openCodingEditors[activeQuestion.questionId]) : false;
+
   if (!isAuthenticated) {
     return (
       <section className="panel stack">
@@ -300,17 +327,30 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
       />
 
       {activeQuestionType === 'coding' ? (
-        <CodingWorkspace
-          code={activeCode}
-          language={activeQuestionLanguage}
-          output={activeCodeOutput}
-          disabled={isActionPending}
-          isSubmitting={evaluateMutation.isPending}
-          onCodeChange={handleCodeChange}
-          onRun={handleRunCode}
-          onSubmit={() => handleMutatingAction(() => evaluateMutation.mutateAsync())}
-          onClear={handleResetCode}
-        />
+        isCodingEditorOpen ? (
+          <CodingEditor
+            code={activeCode}
+            language={activeQuestionLanguage}
+            output={activeCodeOutput}
+            disabled={isActionPending}
+            isSubmitting={evaluateMutation.isPending}
+            onCodeChange={handleCodeChange}
+            onRun={handleRunCode}
+            onSubmit={() => handleMutatingAction(() => evaluateMutation.mutateAsync())}
+            onClear={handleResetCode}
+          />
+        ) : (
+          <section className="panel stack">
+            <p style={{ margin: 0 }}>
+              This question expects code, so the transcript box is replaced with an editor and console.
+            </p>
+            <div>
+              <button type="button" onClick={handleOpenCodingEnvironment} disabled={isActionPending}>
+                Open Coding Environment
+              </button>
+            </div>
+          </section>
+        )
       ) : (
         <TranscriptionBox
           transcript={transcript}

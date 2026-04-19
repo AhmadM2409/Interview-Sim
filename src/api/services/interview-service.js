@@ -556,11 +556,16 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
         checkpoint: 'evaluate.answer.received',
         sessionId,
         questionType,
+        requestedAnswerType: payload?.type,
         transcriptLength: normalizedTranscript.length,
         codeLength: normalizedCode.length,
       },
       'Evaluate answer received',
     );
+
+    if (payload?.type && payload.type !== questionType) {
+      throw new HttpError(400, `Answer type ${payload.type} does not match current ${questionType} question`);
+    }
 
     let scores;
     let answerTextToStore;

@@ -176,7 +176,7 @@ describe('Phase 4 interview flow', () => {
     const evaluateResponse = await request(app)
       .post(`/api/interview/${sessionId}/evaluate`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ transcript: 'This should not be accepted after completion.' });
+      .send({ type: 'verbal', transcript: 'This should not be accepted after completion.' });
 
     expect(evaluateResponse.status).toBe(409);
     expect(evaluateResponse.body.error).toBe('Session already completed');

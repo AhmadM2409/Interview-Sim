@@ -283,7 +283,7 @@ describe('Interview session page', () => {
     expect(screen.getByLabelText(/your answer/i)).toHaveValue('Edited manually');
   });
 
-  it('renders a coding editor for coding questions and submits code instead of transcript', async () => {
+  it('opens a coding editor on demand for coding questions and submits code instead of transcript', async () => {
     const user = userEvent.setup();
     getCurrentInterviewQuestion.mockResolvedValue({
       questionId: 'q-code',
@@ -305,6 +305,10 @@ describe('Interview session page', () => {
 
     await screen.findByText(/write a javascript function that reverses a string/i);
     expect(screen.queryByLabelText(/your answer/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/code editor/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open coding environment/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /open coding environment/i }));
     expect(screen.getByLabelText(/code editor/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/code editor/i), {
@@ -316,12 +320,13 @@ describe('Interview session page', () => {
 
     expect(await screen.findByText(/code ran successfully/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /submit code/i }));
+    await user.click(screen.getByRole('button', { name: /confirm answer/i }));
 
     await waitFor(() => {
       expect(evaluateInterviewAnswer).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: 'session-code',
+          type: 'coding',
           code: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
           language: 'javascript',
         }),
@@ -329,5 +334,65 @@ describe('Interview session page', () => {
     });
 
     expect(await screen.findByText(/good start with a correct implementation/i)).toBeInTheDocument();
+  });
+
+  it('infers a coding question from keywords when question.type is missing', async () => {
+    const user = userEvent.setup();
+    getCurrentInterviewQuestion.mockResolvedValue({
+      questionId: 'q-inferred',
+      questionText: 'Implement an algorithm to merge two sorted arrays.',
+      order: 3,
+    });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-inferred" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/implement an algorithm to merge two sorted arrays/i);
+    expect(screen.getByRole('button', { name: /open coding environment/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /open coding environment/i }));
+    expect(screen.getByLabelText(/code editor/i)).toBeInTheDocument();
+  });
+
+  it('still progresses to the next question after a coding answer is submitted', async () => {
+    const user = userEvent.setup();
+    getCurrentInterviewQuestion.mockResolvedValue({
+      questionId: 'q-code-progress',
+      questionText: 'Write a JavaScript function that reverses a string.',
+      order: 1,
+      type: 'coding',
+      language: 'javascript',
+    });
+    evaluateInterviewAnswer.mockResolvedValue({
+      questionId: 'q-code-progress',
+      scores: {
+        technicalScore: 82,
+        communicationScore: 70,
+        feedback: 'Solid coding answer.',
+      },
+    });
+    getNextInterviewQuestion.mockResolvedValue({
+      questionId: 'q-verbal-next',
+      questionText: 'Tell me about a system you designed.',
+      order: 2,
+      type: 'verbal',
+    });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-code-progress" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/write a javascript function that reverses a string/i);
+    await user.click(screen.getByRole('button', { name: /open coding environment/i }));
+
+    fireEvent.change(screen.getByLabelText(/code editor/i), {
+      target: {
+        value: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: /confirm answer/i }));
+    expect(await screen.findByText(/solid coding answer/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /next question/i }));
+    expect(await screen.findByText(/tell me about a system you designed/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/your answer/i)).toBeInTheDocument();
   });
 });
