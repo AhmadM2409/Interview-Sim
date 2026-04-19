@@ -78,7 +78,7 @@ const runJavaScriptSnippet = (source) => {
 };
 
 export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
-  const { token, isAuthenticated, loginWithDemo } = useAuth();
+  const { token, isAuthenticated, loginWithGoogle, isLoading, getToken } = useAuth();
   const [transcript, setTranscript] = useState('');
   const [codeDrafts, setCodeDrafts] = useState({});
   const [codeOutputs, setCodeOutputs] = useState({});
@@ -92,7 +92,10 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   const questionQuery = useQuery({
     queryKey: ['interview-question', sessionId],
     enabled: isAuthenticated,
-    queryFn: () => getCurrentInterviewQuestion({ token, sessionId }),
+    queryFn: async () => {
+      const authToken = await getToken();
+      return getCurrentInterviewQuestion({ token: authToken, sessionId });
+    },
     retry: false,
   });
 
@@ -124,16 +127,18 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   const activeCodeOutput = activeQuestion?.questionId ? (codeOutputs[activeQuestion.questionId] ?? '') : '';
 
   const evaluateMutation = useMutation({
-    mutationFn: () =>
-      activeQuestionType === 'coding'
+    mutationFn: async () => {
+      const authToken = await getToken();
+      return activeQuestionType === 'coding'
         ? evaluateInterviewAnswer({
-            token,
+            token: authToken,
             sessionId,
             type: 'coding',
             code: activeCode,
             language: activeQuestionLanguage,
           })
-        : evaluateInterviewAnswer({ token, sessionId, type: 'verbal', transcript: transcript.trim() }),
+        : evaluateInterviewAnswer({ token: authToken, sessionId, type: 'verbal', transcript: transcript.trim() });
+    },
     onSuccess: (data) => {
       setFeedback(data.scores);
       setNotice(activeQuestionType === 'coding' ? 'Code evaluated successfully.' : 'Answer evaluated successfully.');
@@ -141,7 +146,10 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   });
 
   const nextMutation = useMutation({
-    mutationFn: () => getNextInterviewQuestion({ token, sessionId }),
+    mutationFn: async () => {
+      const authToken = await getToken();
+      return getNextInterviewQuestion({ token: authToken, sessionId });
+    },
     onSuccess: (data) => {
       const normalizedQuestion = normalizeQuestion(data);
       setActiveQuestion(normalizedQuestion);
@@ -159,14 +167,20 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => completeInterviewSession({ token, sessionId }),
+    mutationFn: async () => {
+      const authToken = await getToken();
+      return completeInterviewSession({ token: authToken, sessionId });
+    },
     onSuccess: () => {
       onCompleted(sessionId);
     },
   });
 
   const audioMutation = useMutation({
-    mutationFn: () => getCurrentQuestionAudio({ token, sessionId }),
+    mutationFn: async () => {
+      const authToken = await getToken();
+      return getCurrentQuestionAudio({ token: authToken, sessionId });
+    },
     onSuccess: (data) => {
       setAudioSrc(`data:${data.mimeType || 'audio/mpeg'};base64,${data.audioBase64}`);
       setNotice('Question audio is ready.');
@@ -278,9 +292,12 @@ export const InterviewSessionPage = ({ sessionId, onCompleted }) => {
     return (
       <section className="panel stack">
         <strong>You need to sign in first.</strong>
-        <div>
-          <button type="button" onClick={loginWithDemo}>
-            Sign In (Demo)
+        <p className="muted" style={{ margin: 0 }}>
+          Sign in with your preferred method to continue.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+          <button type="button" onClick={loginWithGoogle} disabled={isLoading}>
+            {isLoading ? 'Loading...' : 'Sign In with Google'}
           </button>
         </div>
       </section>

@@ -1,43 +1,70 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-
-const STORAGE_KEY = 'ai_interview_demo_token';
-const DEMO_TOKEN = 'mock-auth-token';
+import { createContext, useContext } from 'react';
+import { Auth0Provider, useAuth0 } from '@auth0/auth0-react';
 
 const AuthContext = createContext(null);
 
-const readToken = () => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
+export const AuthProvider = ({ children }) => {
+  const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
+  const auth0ClientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
+  const auth0CallbackUrl = import.meta.env.VITE_AUTH0_CALLBACK_URL;
 
-  return window.localStorage.getItem(STORAGE_KEY);
+  return (
+    <Auth0Provider
+      domain={auth0Domain}
+      clientId={auth0ClientId}
+      authorizationParams={{
+        redirect_uri: auth0CallbackUrl,
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+        connection: 'google-oauth2',
+      }}
+      useRefreshTokens={true}
+      cacheLocation="localstorage"
+    >
+      <Auth0ContextWrapper>{children}</Auth0ContextWrapper>
+    </Auth0Provider>
+  );
 };
 
-export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(readToken);
+const Auth0ContextWrapper = ({ children }) => {
+  const { loginWithRedirect, logout, isAuthenticated, user, getAccessTokenSilently, isLoading } =
+    useAuth0();
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
+  const getToken = async () => {
+    if (!isAuthenticated) {
+      return null;
     }
-
-    if (token) {
-      window.localStorage.setItem(STORAGE_KEY, token);
-      return;
+    try {
+      return await getAccessTokenSilently({
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Error getting access token:', error);
+      return null;
     }
+  };
 
-    window.localStorage.removeItem(STORAGE_KEY);
-  }, [token]);
-
-  const value = useMemo(
-    () => ({
-      token,
-      isAuthenticated: Boolean(token),
-      loginWithDemo: () => setToken(DEMO_TOKEN),
-      logout: () => setToken(null),
-    }),
-    [token],
-  );
+  const value = {
+    isAuthenticated,
+    isLoading,
+    user,
+    token: null, // Will be fetched dynamically
+    getToken,
+    loginWithAuth0: () =>
+      loginWithRedirect({
+        appState: { returnTo: window.location.pathname },
+      }),
+    loginWithGoogle: () =>
+      loginWithRedirect({
+        connection: 'google-oauth2',
+        appState: { returnTo: window.location.pathname },
+      }),
+    loginWithDemo: () =>
+      loginWithRedirect({
+        appState: { returnTo: window.location.pathname },
+      }),
+    logout: () => logout({ logoutParams: { returnTo: window.location.origin } }),
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

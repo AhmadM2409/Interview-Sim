@@ -5,10 +5,13 @@ import { InterviewConfigForm } from '../components/InterviewConfigForm.jsx';
 import { toUiError } from '../../shared/api/client.js';
 
 export const InterviewSetupPage = ({ onSessionCreated }) => {
-  const { token, isAuthenticated, loginWithDemo } = useAuth();
+  const { token, isAuthenticated, loginWithGoogle, loginWithAuth0, isLoading, getToken } = useAuth();
 
   const createSessionMutation = useMutation({
-    mutationFn: ({ role, level }) => createInterviewSession({ token, role, level }),
+    mutationFn: async ({ role, level }) => {
+      const authToken = await getToken();
+      return createInterviewSession({ token: authToken, role, level });
+    },
     onSuccess: (data) => {
       onSessionCreated(data.sessionId);
     },
@@ -29,11 +32,14 @@ export const InterviewSetupPage = ({ onSessionCreated }) => {
         <section className="panel stack">
           <strong>You need to sign in first.</strong>
           <p className="muted" style={{ margin: 0 }}>
-            This environment uses a local demo sign-in.
+            Sign in with your preferred method to start interviewing.
           </p>
-          <div>
-            <button type="button" onClick={loginWithDemo}>
-              Sign In (Demo)
+          <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+            <button type="button" onClick={loginWithGoogle} disabled={isLoading}>
+              {isLoading ? 'Loading...' : 'Sign In with Google'}
+            </button>
+            <button type="button" onClick={loginWithAuth0} disabled={isLoading}>
+              {isLoading ? 'Loading...' : 'Sign In with Auth0'}
             </button>
           </div>
         </section>

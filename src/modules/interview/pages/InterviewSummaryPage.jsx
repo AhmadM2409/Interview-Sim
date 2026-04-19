@@ -18,19 +18,25 @@ const formatDateTime = (value) => {
 };
 
 export const InterviewSummaryPage = ({ sessionId }) => {
-  const { token, isAuthenticated, loginWithDemo } = useAuth();
+  const { token, isAuthenticated, loginWithGoogle, isLoading, getToken } = useAuth();
 
   const summaryQuery = useQuery({
     queryKey: ['interview-summary', sessionId],
     enabled: isAuthenticated,
-    queryFn: () => getInterviewSummary({ token, sessionId }),
+    queryFn: async () => {
+      const authToken = await getToken();
+      return getInterviewSummary({ token: authToken, sessionId });
+    },
     retry: false,
   });
 
   const historyQuery = useQuery({
     queryKey: ['interview-history'],
     enabled: isAuthenticated,
-    queryFn: () => getInterviewHistory({ token }),
+    queryFn: async () => {
+      const authToken = await getToken();
+      return getInterviewHistory({ token: authToken });
+    },
     retry: false,
   });
 
@@ -38,9 +44,12 @@ export const InterviewSummaryPage = ({ sessionId }) => {
     return (
       <section className="panel stack">
         <strong>You need to sign in first.</strong>
-        <div>
-          <button type="button" onClick={loginWithDemo}>
-            Sign In (Demo)
+        <p className="muted" style={{ margin: 0 }}>
+          Sign in with your preferred method to view your interview results.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+          <button type="button" onClick={loginWithGoogle} disabled={isLoading}>
+            {isLoading ? 'Loading...' : 'Sign In with Google'}
           </button>
         </div>
       </section>

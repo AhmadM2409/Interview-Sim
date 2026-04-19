@@ -5,21 +5,30 @@ import { initializeCodingSetup } from '../api/codingApi.js';
 import { toUiError } from '../../shared/api/client.js';
 
 export const CodingSetupPage = () => {
-  const { token, isAuthenticated, loginWithDemo } = useAuth();
+  const { token, isAuthenticated, loginWithGoogle, loginWithAuth0, isLoading, getToken } = useAuth();
   const [language, setLanguage] = useState('javascript');
   const [problem, setProblem] = useState('array-transform');
 
   const setupMutation = useMutation({
-    mutationFn: () => initializeCodingSetup({ token, language, problem }),
+    mutationFn: async () => {
+      const authToken = await getToken();
+      return initializeCodingSetup({ token: authToken, language, problem });
+    },
   });
 
   if (!isAuthenticated) {
     return (
       <section className="panel stack">
         <strong>You need to sign in first.</strong>
-        <div>
-          <button type="button" onClick={loginWithDemo}>
-            Sign In (Demo)
+        <p className="muted" style={{ margin: 0 }}>
+          Sign in with your preferred method to start coding.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+          <button type="button" onClick={loginWithGoogle} disabled={isLoading}>
+            {isLoading ? 'Loading...' : 'Sign In with Google'}
+          </button>
+          <button type="button" onClick={loginWithAuth0} disabled={isLoading}>
+            {isLoading ? 'Loading...' : 'Sign In with Auth0'}
           </button>
         </div>
       </section>
