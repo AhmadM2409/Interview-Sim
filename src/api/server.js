@@ -11,9 +11,22 @@ import { config } from './config.js';
 dotenv.config();
 
 const app = express();
+const loopbackOriginPattern = /^http:\/\/127\.0\.0\.1(?::\d+)?$/;
+const isAllowedOrigin = (origin) =>
+  config.allowedOrigins.includes(origin) || loopbackOriginPattern.test(origin);
 
 const corsOptions = {
-  origin: config.frontendOrigin,
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (isAllowedOrigin(origin)) {
+      return callback(null, origin);
+    }
+
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
