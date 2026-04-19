@@ -4,6 +4,8 @@ import { HttpError } from '../errors.js';
 import { fetchRoleContext } from './tavily-provider.js';
 import {
   evaluateAnswerWithRetry,
+  evaluateCodingAnswerWithRetry,
+  generateCodingAssistantFeedbackWithRetry,
   generateQuestionWithRetry,
   generateSummaryWithRetry,
 } from './llm-retry.js';
@@ -12,18 +14,27 @@ import logger from '../logger.js';
 import { synthesizeSpeech } from './tts-provider.js';
 import { config } from '../config.js';
 import { buildFallbackSummary } from './llm-provider.js';
+import {
+  buildFallbackCodingAssistantFeedback,
+  buildFallbackCodingEvaluation,
+  normalizeCode,
+  normalizeTranscript,
+} from './coding-feedback.js';
+import {
+  buildDeterministicQuestionForCategory,
+  interviewQuestionCategories,
+  isSemanticallyDuplicateQuestion,
+  normalizeQuestionRecord,
+  planNextQuestionCategory,
+  supportedCodingLanguages,
+} from './interview-question-utils.js';
 
 const now = () => new Date().toISOString();
 
 const deterministicOpeningQuestion = (role) => `Let's begin. Tell me about your experience as a ${role}.`;
-
-const roundScore = (value) => Math.round(Number(value));
-const normalizeTranscript = (value) =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-const normalizeCode = (value) =>
-  typeof value === 'string' ? value.replace(/\r\n/g, '\n').trimEnd() : '';
 const missingResponsePattern = /no response provided/i;
-const clampScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+const roundScore = (value) => Math.round(Number(value));
+const shouldBypassRemoteCodingModels = process.env.VITEST === 'true';
 
 const buildLowSignalVerbalEvaluation = () => ({
   technicalScore: 5,
@@ -46,61 +57,171 @@ const normalizeVerbalEvaluation = (transcript, scores) => {
   return scores;
 };
 
-const scoreCodingAnswer = ({ code, language }) => {
-  const normalizedCode = normalizeCode(code).trim();
+const buildOpeningQuestionRecord = (role) =>
+  normalizeQuestionRecord({
+    questionText: deterministicOpeningQuestion(role),
+    type: 'verbal',
+    category: 'background',
+    language: null,
+  });
 
-  if (!normalizedCode) {
-    return {
-      technicalScore: 0,
-      communicationScore: 0,
-      feedback: 'No code provided for evaluation.',
-    };
+const serializeAssistantMessages = (messages) => JSON.stringify(Array.isArray(messages) ? messages : []);
+
+const parseAssistantMessages = (rawValue) => {
+  if (!rawValue) {
+    return [];
   }
 
-  let technicalScore = 18;
-  let communicationScore = 28;
-
-  if (/function\s+\w+|\=\>\s*\{?/.test(normalizedCode)) {
-    technicalScore += 20;
+  try {
+    const parsed = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+    return Array.isArray(parsed)
+      ? parsed
+          .map((message) => ({
+            role: message?.role === 'candidate' ? 'candidate' : 'assistant',
+            text: normalizeTranscript(message?.text),
+          }))
+          .filter((message) => message.text)
+      : [];
+  } catch (_error) {
+    return [];
   }
+};
 
-  if (/\breturn\b/.test(normalizedCode)) {
-    technicalScore += 18;
-  }
+const normalizeAssistantMessages = (messages) =>
+  Array.isArray(messages)
+    ? messages
+        .map((message) => ({
+          role: message?.role === 'candidate' ? 'candidate' : 'assistant',
+          text: normalizeTranscript(message?.text),
+        }))
+        .filter((message) => message.text)
+        .slice(-8)
+    : [];
 
-  if (/\b(if|for|while|map|filter|reduce|try|catch)\b/.test(normalizedCode)) {
-    technicalScore += 14;
-  }
-
-  if (/\bsplit\b|\bjoin\b|\bpush\b|\bpop\b|\bshift\b|\bunshift\b/.test(normalizedCode)) {
-    technicalScore += 12;
-  }
-
-  if (normalizedCode.split('\n').length >= 3) {
-    communicationScore += 15;
-  }
-
-  if (/\/\/|\/\*/.test(normalizedCode)) {
-    communicationScore += 8;
-  }
-
-  if (/\bconst\b|\blet\b/.test(normalizedCode)) {
-    communicationScore += 8;
-  }
-
-  const normalizedLanguage = normalizeTranscript(language) || 'javascript';
-  const finalTechnical = clampScore(technicalScore);
-  const finalCommunication = clampScore(communicationScore);
-  const feedback =
-    finalTechnical >= 65
-      ? `Promising ${normalizedLanguage} solution. Keep checking edge cases and explain the tradeoffs behind your implementation choices.`
-      : `Code was submitted, but the ${normalizedLanguage} solution needs more complete logic or clearer structure to show interview-ready problem solving.`;
+const formatQuestionResponse = (question) => {
+  const normalizedQuestion = normalizeQuestionRecord(question);
 
   return {
-    technicalScore: finalTechnical,
-    communicationScore: finalCommunication,
-    feedback,
+    questionId: normalizedQuestion.id,
+    questionText: normalizedQuestion.questionText,
+    type: normalizedQuestion.type,
+    category: normalizedQuestion.category,
+    language: normalizedQuestion.language,
+    supportedLanguages: normalizedQuestion.type === 'coding' ? supportedCodingLanguages : null,
+    order: normalizedQuestion.order_index ?? normalizedQuestion.order ?? 1,
   };
+};
+
+const getSessionQuestionHistory = async (sessionId) =>
+  all(
+    `SELECT id, question_text, question_type, question_category, language, order_index, created_at
+     FROM questions
+     WHERE session_id = ?
+     ORDER BY order_index ASC, created_at ASC`,
+    [sessionId],
+  );
+
+const getFallbackQuestionCategories = (targetCategory, previousQuestions) => {
+  const missingCategories = interviewQuestionCategories.filter(
+    (category) =>
+      category !== 'background' &&
+      !previousQuestions.some((question) => normalizeQuestionRecord(question).category === category),
+  );
+
+  return [...new Set([targetCategory, ...missingCategories, 'technical', 'behavioral', 'situational', 'coding'])];
+};
+
+const generatePlannedQuestion = async ({ sessionId, role, context, questionHistory }) => {
+  const normalizedHistory = questionHistory.map(normalizeQuestionRecord);
+  const targetCategory = planNextQuestionCategory(normalizedHistory);
+  let lastProviderError = null;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const generated = await generateQuestionWithRetry(role, sessionId, context, {
+        targetCategory,
+        askedQuestions: normalizedHistory,
+      });
+      const candidate = normalizeQuestionRecord({
+        ...generated,
+        category: generated?.category ?? targetCategory,
+        type: generated?.type ?? (targetCategory === 'coding' ? 'coding' : 'verbal'),
+      });
+
+      if (candidate.category !== targetCategory) {
+        logger.warn(
+          {
+            checkpoint: 'question.category.mismatch',
+            sessionId,
+            requestedCategory: targetCategory,
+            returnedCategory: candidate.category,
+            questionText: candidate.questionText,
+          },
+          'Generated question did not match requested category',
+        );
+        continue;
+      }
+
+      if (isSemanticallyDuplicateQuestion(candidate.questionText, normalizedHistory)) {
+        logger.warn(
+          {
+            checkpoint: 'question.duplicate.blocked',
+            sessionId,
+            targetCategory,
+            questionText: candidate.questionText,
+          },
+          'Generated question was blocked as a near-duplicate',
+        );
+        continue;
+      }
+
+      return candidate;
+    } catch (error) {
+      lastProviderError = error;
+      logger.warn(
+        {
+          checkpoint: 'question.provider.generation.failed',
+          sessionId,
+          targetCategory,
+          errorMessage: error?.message,
+          statusCode: error?.statusCode,
+        },
+        'Question generation fell back toward deterministic planning',
+      );
+    }
+  }
+
+  const fallbackCategories = getFallbackQuestionCategories(targetCategory, normalizedHistory);
+
+  for (const category of fallbackCategories) {
+    const fallbackQuestion = buildDeterministicQuestionForCategory({
+      role,
+      category,
+      previousQuestions: normalizedHistory,
+    });
+
+    if (!isSemanticallyDuplicateQuestion(fallbackQuestion.questionText, normalizedHistory)) {
+      return fallbackQuestion;
+    }
+  }
+
+  if (lastProviderError) {
+    logger.warn(
+      {
+        checkpoint: 'question.fallback.exhausted',
+        sessionId,
+        targetCategory,
+        errorMessage: lastProviderError?.message,
+      },
+      'Question planning exhausted retries and deterministic variants',
+    );
+  }
+
+  return buildDeterministicQuestionForCategory({
+    role,
+    category: targetCategory,
+    previousQuestions: [],
+  });
 };
 
 export const getSessionById = async (sessionId) => get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
@@ -135,7 +256,21 @@ const parseSummary = (rawSummary) => {
 
 const buildSummaryInput = async (sessionId) => {
   const rows = await all(
-    `SELECT r.answer_text, r.answer_type, r.language AS answer_language, r.technical_score, r.communication_score, r.feedback, q.question_text, q.question_type, q.language AS question_language, q.order_index
+    `SELECT
+       r.answer_text,
+       r.answer_type,
+       r.language AS answer_language,
+       r.transcript,
+       r.assistant_messages_json,
+       r.technical_score,
+       r.problem_solving_score,
+       r.communication_score,
+       r.feedback,
+       q.question_text,
+       q.question_type,
+       q.question_category,
+       q.language AS question_language,
+       q.order_index
      FROM responses r
      INNER JOIN questions q ON q.id = r.question_id
      WHERE r.session_id = ?
@@ -163,11 +298,15 @@ const buildSummaryInput = async (sessionId) => {
   const responses = rows.map((row) => ({
     questionText: row.question_text,
     questionType: row.question_type,
+    questionCategory: row.question_category,
     questionLanguage: row.question_language,
     answerText: row.answer_text,
     answerType: row.answer_type,
     answerLanguage: row.answer_language,
+    transcript: row.transcript,
+    assistantMessages: parseAssistantMessages(row.assistant_messages_json),
     technicalScore: row.technical_score,
+    problemSolvingScore: row.problem_solving_score,
     communicationScore: row.communication_score,
     feedback: row.feedback,
     order: row.order_index,
@@ -197,7 +336,10 @@ const enrichSummary = (summary, stats) => ({
 });
 
 const getNextQuestionOrder = async (sessionId) => {
-  const row = await get('SELECT COALESCE(MAX(order_index), 0) AS max_order FROM questions WHERE session_id = ?', [sessionId]);
+  const row = await get(
+    'SELECT COALESCE(MAX(order_index), 0) AS max_order FROM questions WHERE session_id = ?',
+    [sessionId],
+  );
   return Number(row?.max_order ?? 0) + 1;
 };
 
@@ -205,7 +347,7 @@ export const createSession = async ({ role, level, userSub }) => {
   const sessionId = crypto.randomUUID();
   const questionId = crypto.randomUUID();
   const createdAt = now();
-  const openingQuestion = deterministicOpeningQuestion(role);
+  const openingQuestion = buildOpeningQuestionRecord(role);
 
   await run(
     `INSERT INTO sessions (id, user_sub, role, level, status, is_processing, summary_json, current_question_id, created_at, updated_at)
@@ -214,9 +356,18 @@ export const createSession = async ({ role, level, userSub }) => {
   );
 
   await run(
-    `INSERT INTO questions (id, session_id, question_text, question_type, language, order_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [questionId, sessionId, openingQuestion, 'verbal', null, 1, createdAt],
+    `INSERT INTO questions (id, session_id, question_text, question_type, question_category, language, order_index, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      questionId,
+      sessionId,
+      openingQuestion.questionText,
+      openingQuestion.type,
+      openingQuestion.category,
+      openingQuestion.language,
+      1,
+      createdAt,
+    ],
   );
 
   return {
@@ -225,7 +376,7 @@ export const createSession = async ({ role, level, userSub }) => {
     level,
     status: 'ACTIVE',
     currentQuestionId: questionId,
-    currentQuestionText: openingQuestion,
+    currentQuestionText: openingQuestion.questionText,
   };
 };
 
@@ -270,30 +421,38 @@ export const getCurrentQuestion = async (sessionId) => {
       currentQuestion = firstQuestion;
     } else {
       const questionId = crypto.randomUUID();
-      const questionText = deterministicOpeningQuestion(session.role);
+      const openingQuestion = buildOpeningQuestionRecord(session.role);
       await run(
-        `INSERT INTO questions (id, session_id, question_text, question_type, language, order_index, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [questionId, sessionId, questionText, 'verbal', null, 1, now()],
+        `INSERT INTO questions (id, session_id, question_text, question_type, question_category, language, order_index, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          questionId,
+          sessionId,
+          openingQuestion.questionText,
+          openingQuestion.type,
+          openingQuestion.category,
+          openingQuestion.language,
+          1,
+          now(),
+        ],
       );
-      await run('UPDATE sessions SET current_question_id = ?, updated_at = ? WHERE id = ?', [questionId, now(), sessionId]);
+      await run('UPDATE sessions SET current_question_id = ?, updated_at = ? WHERE id = ?', [
+        questionId,
+        now(),
+        sessionId,
+      ]);
       currentQuestion = {
         id: questionId,
-        question_text: questionText,
-        question_type: 'verbal',
-        language: null,
+        question_text: openingQuestion.questionText,
+        question_type: openingQuestion.type,
+        question_category: openingQuestion.category,
+        language: openingQuestion.language,
         order_index: 1,
       };
     }
   }
 
-  return {
-    questionId: currentQuestion.id,
-    questionText: currentQuestion.question_text,
-    type: currentQuestion.question_type ?? 'verbal',
-    language: currentQuestion.language ?? null,
-    order: currentQuestion.order_index,
-  };
+  return formatQuestionResponse(currentQuestion);
 };
 
 export const createNextQuestion = async (sessionId, options = {}) => {
@@ -309,30 +468,47 @@ export const createNextQuestion = async (sessionId, options = {}) => {
 
   const nextOrder = await getNextQuestionOrder(sessionId);
   const questionId = crypto.randomUUID();
+  const questionHistory = await getSessionQuestionHistory(sessionId);
   const context = await fetchRoleContext(session.role, {
     forceTimeout: options.forceTavilyTimeout,
   });
-  const generated = await generateQuestionWithRetry(session.role, sessionId, context);
-  const questionText = generated.questionText;
-  const questionType = generated.type ?? 'verbal';
-  const language = questionType === 'coding' ? generated.language ?? 'javascript' : null;
+  const plannedQuestion = await generatePlannedQuestion({
+    sessionId,
+    role: session.role,
+    context,
+    questionHistory,
+  });
   const createdAt = now();
 
   await run(
-    `INSERT INTO questions (id, session_id, question_text, question_type, language, order_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [questionId, sessionId, questionText, questionType, language, nextOrder, createdAt],
+    `INSERT INTO questions (id, session_id, question_text, question_type, question_category, language, order_index, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      questionId,
+      sessionId,
+      plannedQuestion.questionText,
+      plannedQuestion.type,
+      plannedQuestion.category,
+      plannedQuestion.language,
+      nextOrder,
+      createdAt,
+    ],
   );
 
-  await run('UPDATE sessions SET current_question_id = ?, updated_at = ? WHERE id = ?', [questionId, createdAt, sessionId]);
-
-  return {
+  await run('UPDATE sessions SET current_question_id = ?, updated_at = ? WHERE id = ?', [
     questionId,
-    questionText,
-    type: questionType,
-    language,
-    order: nextOrder,
-  };
+    createdAt,
+    sessionId,
+  ]);
+
+  return formatQuestionResponse({
+    id: questionId,
+    question_text: plannedQuestion.questionText,
+    question_type: plannedQuestion.type,
+    question_category: plannedQuestion.category,
+    language: plannedQuestion.language,
+    order_index: nextOrder,
+  });
 };
 
 export const completeSession = async (sessionId) => {
@@ -515,6 +691,107 @@ export const getCurrentQuestionAudio = async (sessionId) => {
   }
 };
 
+export const getCodingAssistantFeedback = async (sessionId, payload) => {
+  const session = await getSessionById(sessionId);
+
+  if (!session) {
+    throw new HttpError(404, 'Session not found');
+  }
+
+  if (session.status === 'COMPLETED') {
+    throw new HttpError(409, 'Session already completed');
+  }
+
+  const currentQuestion = await getCurrentQuestionForSession(sessionId);
+
+  if (!currentQuestion) {
+    throw new HttpError(404, 'Current question not found');
+  }
+
+  const normalizedQuestion = normalizeQuestionRecord(currentQuestion);
+
+  if (normalizedQuestion.type !== 'coding') {
+    throw new HttpError(400, 'Live coding assistant is only available for coding questions');
+  }
+
+  const normalizedCode = normalizeCode(payload?.code);
+  const normalizedTranscript = normalizeTranscript(payload?.transcript);
+  const assistantMessages = normalizeAssistantMessages(payload?.assistantMessages);
+  const answerLanguage = normalizedQuestion.language ?? payload?.language ?? 'javascript';
+
+  if (!normalizedCode.trim() && !normalizedTranscript) {
+    throw new HttpError(400, 'Provide code or spoken reasoning for live coding feedback');
+  }
+
+  let feedback;
+
+  if (shouldBypassRemoteCodingModels) {
+    feedback = buildFallbackCodingAssistantFeedback({
+      questionText: normalizedQuestion.questionText,
+      language: answerLanguage,
+      code: normalizedCode,
+      transcript: normalizedTranscript,
+      assistantMessages,
+    });
+  } else {
+    try {
+      feedback = await generateCodingAssistantFeedbackWithRetry(sessionId, {
+        role: session.role,
+        questionText: normalizedQuestion.questionText,
+        questionCategory: normalizedQuestion.category,
+        language: answerLanguage,
+        code: normalizedCode,
+        transcript: normalizedTranscript,
+        assistantMessages,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          checkpoint: 'coding.assistant.fallback.used',
+          sessionId,
+          errorMessage: error?.message,
+          statusCode: error?.statusCode,
+        },
+        'Coding assistant fell back to deterministic guidance',
+      );
+      feedback = buildFallbackCodingAssistantFeedback({
+        questionText: normalizedQuestion.questionText,
+        language: answerLanguage,
+        code: normalizedCode,
+        transcript: normalizedTranscript,
+        assistantMessages,
+      });
+    }
+  }
+
+  let audioBase64 = null;
+
+  if (payload?.includeAudio) {
+    try {
+      const audioBuffer = await synthesizeSpeech(feedback.responseText, config.elevenLabsDefaultVoiceId);
+      audioBase64 = audioBuffer.toString('base64');
+    } catch (error) {
+      logger.warn(
+        {
+          checkpoint: 'coding.assistant.tts.failed',
+          sessionId,
+          errorMessage: error?.message,
+        },
+        'Coding assistant voice playback could not be generated',
+      );
+    }
+  }
+
+  return {
+    questionId: normalizedQuestion.id,
+    language: answerLanguage,
+    ...feedback,
+    voiceId: audioBase64 ? config.elevenLabsDefaultVoiceId : null,
+    mimeType: audioBase64 ? 'audio/mpeg' : null,
+    audioBase64,
+  };
+};
+
 export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
   withSessionLock(sessionId, async () => {
     const session = await getSessionById(sessionId);
@@ -545,11 +822,12 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
       'Evaluate current question found',
     );
 
-    const questionType = currentQuestion.question_type ?? 'verbal';
+    const normalizedQuestion = normalizeQuestionRecord(currentQuestion);
+    const questionType = normalizedQuestion.type;
     const normalizedTranscript = normalizeTranscript(payload?.transcript);
     const normalizedCode = normalizeCode(payload?.code);
-    const answerLanguage =
-      normalizeTranscript(payload?.language) || currentQuestion.language || 'javascript';
+    const answerLanguage = payload?.language || normalizedQuestion.language || 'javascript';
+    const assistantMessages = normalizeAssistantMessages(payload?.assistantMessages);
 
     logger.info(
       {
@@ -571,6 +849,8 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
     let answerTextToStore;
     let answerType;
     let languageToStore = null;
+    let transcriptToStore = null;
+    let assistantMessagesToStore = null;
 
     if (questionType === 'coding') {
       if (!normalizedCode.trim()) {
@@ -587,13 +867,57 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
         'Coding answer normalized',
       );
 
-      scores = scoreCodingAnswer({
-        code: normalizedCode,
-        language: answerLanguage,
-      });
+      if (shouldBypassRemoteCodingModels) {
+        scores = buildFallbackCodingEvaluation({
+          role: session.role,
+          questionText: normalizedQuestion.questionText,
+          language: answerLanguage,
+          code: normalizedCode,
+          transcript: normalizedTranscript,
+          assistantMessages,
+        });
+      } else {
+        try {
+          scores = await evaluateCodingAnswerWithRetry(sessionId, {
+            role: session.role,
+            questionText: normalizedQuestion.questionText,
+            questionType,
+            questionCategory: normalizedQuestion.category,
+            language: answerLanguage,
+            code: normalizedCode,
+            transcript: normalizedTranscript,
+            assistantMessages,
+          });
+        } catch (error) {
+          logger.warn(
+            {
+              checkpoint: 'coding.evaluation.fallback.used',
+              sessionId,
+              errorMessage: error?.message,
+              statusCode: error?.statusCode,
+            },
+            'Coding evaluation fell back to deterministic review',
+          );
+          scores = buildFallbackCodingEvaluation({
+            role: session.role,
+            questionText: normalizedQuestion.questionText,
+            language: answerLanguage,
+            code: normalizedCode,
+            transcript: normalizedTranscript,
+            assistantMessages,
+          });
+        }
+      }
+
+      scores = {
+        ...scores,
+        feedback: scores.finalFeedback ?? scores.feedback,
+      };
       answerTextToStore = normalizedCode;
       answerType = 'coding';
       languageToStore = answerLanguage;
+      transcriptToStore = normalizedTranscript || null;
+      assistantMessagesToStore = assistantMessages.length > 0 ? serializeAssistantMessages(assistantMessages) : null;
     } else {
       if (!normalizedTranscript) {
         throw new HttpError(400, 'Transcript is required for verbal questions');
@@ -640,13 +964,14 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
       );
       answerTextToStore = normalizedTranscript;
       answerType = 'verbal';
+      transcriptToStore = normalizedTranscript;
     }
 
     const responseId = crypto.randomUUID();
 
     await run(
-      `INSERT INTO responses (id, session_id, question_id, answer_text, answer_type, language, technical_score, communication_score, feedback, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO responses (id, session_id, question_id, answer_text, answer_type, language, transcript, assistant_messages_json, technical_score, problem_solving_score, communication_score, feedback, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         responseId,
         sessionId,
@@ -654,7 +979,10 @@ export const evaluateSessionAnswer = async (sessionId, payload, options = {}) =>
         answerTextToStore,
         answerType,
         languageToStore,
+        transcriptToStore,
+        assistantMessagesToStore,
         scores.technicalScore,
+        typeof scores.problemSolvingScore === 'number' ? scores.problemSolvingScore : null,
         scores.communicationScore,
         scores.feedback,
         now(),

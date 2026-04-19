@@ -17,7 +17,15 @@ export const getCurrentQuestionAudio = ({ token, sessionId }) =>
     token,
   });
 
-export const evaluateInterviewAnswer = ({ token, sessionId, type, transcript, code, language }) =>
+export const evaluateInterviewAnswer = ({
+  token,
+  sessionId,
+  type,
+  transcript,
+  code,
+  language,
+  assistantMessages,
+}) =>
   requestJson(`/api/interview/${sessionId}/evaluate`, {
     method: 'POST',
     token,
@@ -26,6 +34,28 @@ export const evaluateInterviewAnswer = ({ token, sessionId, type, transcript, co
       ...(typeof transcript === 'string' ? { transcript } : {}),
       ...(typeof code === 'string' ? { code } : {}),
       ...(language ? { language } : {}),
+      ...(Array.isArray(assistantMessages) ? { assistantMessages } : {}),
+    },
+  });
+
+export const requestCodingAssistantFeedback = ({
+  token,
+  sessionId,
+  code,
+  language,
+  transcript,
+  assistantMessages,
+  includeAudio,
+}) =>
+  requestJson(`/api/interview/${sessionId}/coding-assistant`, {
+    method: 'POST',
+    token,
+    body: {
+      ...(typeof code === 'string' ? { code } : {}),
+      ...(language ? { language } : {}),
+      ...(typeof transcript === 'string' ? { transcript } : {}),
+      ...(Array.isArray(assistantMessages) ? { assistantMessages } : {}),
+      ...(typeof includeAudio === 'boolean' ? { includeAudio } : {}),
     },
   });
 

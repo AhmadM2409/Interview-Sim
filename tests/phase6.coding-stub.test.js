@@ -6,6 +6,7 @@ import { generateMockAuthToken } from './helpers/auth-mock.js';
 import { seedActiveSession } from './helpers/db-seed.js';
 import * as llmProvider from '../src/api/services/llm-provider.js';
 import * as tavilyProvider from '../src/api/services/tavily-provider.js';
+import * as ttsProvider from '../src/api/services/tts-provider.js';
 
 beforeEach(async () => {
   await createNewDBInstance();
@@ -93,8 +94,9 @@ describe('Phase 6 coding mode stub', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.scores).toEqual({
+    expect(response.body.data.scores).toMatchObject({
       technicalScore: expect.any(Number),
+      problemSolvingScore: expect.any(Number),
       communicationScore: expect.any(Number),
       feedback: expect.any(String),
     });
@@ -111,6 +113,72 @@ describe('Phase 6 coding mode stub', () => {
         language: 'javascript',
       }),
     );
+  });
+
+  it('stores the selected coding language and transcript with the coding answer', async () => {
+    const token = generateMockAuthToken();
+    const { sessionId } = await seedActiveSession('Backend Engineer', {
+      questionText: 'Implement a function that groups anagrams.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+
+    const response = await request(app)
+      .post(`/api/interview/${sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code: 'def solve(words):\n    return words',
+        language: 'python',
+        transcript: 'I would start with a hash map keyed by sorted characters and then discuss empty input handling.',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.scores.problemSolvingScore).toBeTypeOf('number');
+
+    const row = await get(
+      'SELECT language, transcript FROM responses WHERE session_id = ? ORDER BY created_at DESC LIMIT 1',
+      [sessionId],
+    );
+
+    expect(row).toEqual({
+      language: 'python',
+      transcript:
+        'I would start with a hash map keyed by sorted characters and then discuss empty input handling.',
+    });
+  });
+
+  it('returns live coding assistant feedback and optional audio for coding questions', async () => {
+    const token = generateMockAuthToken();
+    const { sessionId, questionId } = await seedActiveSession('Frontend Engineer', {
+      questionText: 'Implement a function that merges overlapping intervals.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+    vi.spyOn(ttsProvider, 'synthesizeSpeech').mockResolvedValue(Buffer.from('assistant-audio'));
+
+    const response = await request(app)
+      .post(`/api/interview/${sessionId}/coding-assistant`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'function merge(intervals) { return intervals; }',
+        language: 'javascript',
+        transcript: 'I think I need to sort first, then merge while I iterate.',
+        includeAudio: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toMatchObject({
+      questionId,
+      responseText: expect.any(String),
+      suggestedNextStep: expect.any(String),
+      audioBase64: expect.any(String),
+      mimeType: 'audio/mpeg',
+    });
+    expect(response.body.data.responseText).toContain('Good signal');
   });
 
   it('rejects empty coding answers instead of treating them like missing transcripts', async () => {

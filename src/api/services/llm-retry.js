@@ -1,7 +1,19 @@
 import logger from '../logger.js';
 import { HttpError } from '../errors.js';
-import { llmQuestionSchema, evaluationMetricsSchema, summarySchema } from '../schemas.js';
-import { generateQuestion, evaluateAnswer, generateSummary } from './llm-provider.js';
+import {
+  codingAssistantFeedbackSchema,
+  codingEvaluationSchema,
+  evaluationMetricsSchema,
+  llmQuestionSchema,
+  summarySchema,
+} from '../schemas.js';
+import {
+  evaluateAnswer,
+  evaluateCodingAnswer,
+  generateCodingAssistantFeedback,
+  generateQuestion,
+  generateSummary,
+} from './llm-provider.js';
 
 const normalizeIssues = (error) => {
   if (error?.issues) {
@@ -20,6 +32,14 @@ const actionFailureMessage = (actionName) => {
     return 'Question generation failed after schema validation retries';
   }
 
+  if (actionName === 'evaluateCodingAnswer') {
+    return 'Coding evaluation failed after schema validation retries';
+  }
+
+  if (actionName === 'generateCodingAssistantFeedback') {
+    return 'Coding assistant feedback failed after schema validation retries';
+  }
+
   return 'Evaluation failed after schema validation retries';
 };
 
@@ -30,6 +50,14 @@ const actionProviderUnavailableMessage = (actionName, providerMessage) => {
 
   if (actionName === 'generateQuestion') {
     return `Question provider unavailable: ${providerMessage}`;
+  }
+
+  if (actionName === 'evaluateCodingAnswer') {
+    return `Coding evaluation provider unavailable: ${providerMessage}`;
+  }
+
+  if (actionName === 'generateCodingAssistantFeedback') {
+    return `Coding assistant provider unavailable: ${providerMessage}`;
   }
 
   return `Evaluation provider unavailable: ${providerMessage}`;
@@ -113,12 +141,20 @@ const runWithValidationRetry = async ({ actionName, sessionId, schema, runner })
   throw new HttpError(500, actionFailureMessage(actionName));
 };
 
-export const generateQuestionWithRetry = async (role, sessionId, context = '') =>
+export const generateQuestionWithRetry = async (role, sessionId, context = '', options = {}) =>
   runWithValidationRetry({
     actionName: 'generateQuestion',
     sessionId,
     schema: llmQuestionSchema,
-    runner: (attempt) => generateQuestion({ role, sessionId, context, attempt }),
+    runner: (attempt) =>
+      generateQuestion({
+        role,
+        sessionId,
+        context,
+        attempt,
+        targetCategory: options.targetCategory,
+        askedQuestions: options.askedQuestions,
+      }),
   });
 
 export const evaluateAnswerWithRetry = async (sessionId, transcript) =>
@@ -127,6 +163,22 @@ export const evaluateAnswerWithRetry = async (sessionId, transcript) =>
     sessionId,
     schema: evaluationMetricsSchema,
     runner: (attempt) => evaluateAnswer({ sessionId, transcript, attempt }),
+  });
+
+export const evaluateCodingAnswerWithRetry = async (sessionId, payload) =>
+  runWithValidationRetry({
+    actionName: 'evaluateCodingAnswer',
+    sessionId,
+    schema: codingEvaluationSchema,
+    runner: (attempt) => evaluateCodingAnswer({ sessionId, ...payload, attempt }),
+  });
+
+export const generateCodingAssistantFeedbackWithRetry = async (sessionId, payload) =>
+  runWithValidationRetry({
+    actionName: 'generateCodingAssistantFeedback',
+    sessionId,
+    schema: codingAssistantFeedbackSchema,
+    runner: (attempt) => generateCodingAssistantFeedback({ sessionId, ...payload, attempt }),
   });
 
 export const generateSummaryWithRetry = async (sessionId, role, responses) =>

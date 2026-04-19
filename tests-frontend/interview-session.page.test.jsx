@@ -11,6 +11,7 @@ import {
   getCurrentInterviewQuestion,
   getCurrentQuestionAudio,
   getNextInterviewQuestion,
+  requestCodingAssistantFeedback,
 } from '../src/modules/interview/api/interviewApi.js';
 
 vi.mock('@monaco-editor/react', () => ({
@@ -31,6 +32,7 @@ vi.mock('../src/modules/interview/api/interviewApi.js', () => ({
   getNextInterviewQuestion: vi.fn(),
   completeInterviewSession: vi.fn(),
   getCurrentQuestionAudio: vi.fn(),
+  requestCodingAssistantFeedback: vi.fn(),
 }));
 
 const createDeferred = () => {
@@ -94,6 +96,15 @@ describe('Interview session page', () => {
       audioBase64: 'bW9jay1hdWRpbw==',
       mimeType: 'audio/mpeg',
       voiceId: 'voice-1',
+    });
+    requestCodingAssistantFeedback.mockResolvedValue({
+      responseText: 'Good signal: you are narrating your reasoning clearly.',
+      goodSignals: ['You are narrating your reasoning clearly.'],
+      missingOrRisky: ['You still need to state the edge case you will handle next.'],
+      questionableAssumptions: [],
+      suggestedNextStep: 'Call out the next edge case, then update the code.',
+      audioBase64: 'bW9jay1hc3Npc3RhbnQtYXVkaW8=',
+      mimeType: 'audio/mpeg',
     });
   });
 
@@ -283,6 +294,111 @@ describe('Interview session page', () => {
     expect(screen.getByLabelText(/your answer/i)).toHaveValue('Edited manually');
   });
 
+  it('supports coding speech transcription and language selection, then submits both with the code answer', async () => {
+    const user = userEvent.setup();
+    window.SpeechRecognition = MockSpeechRecognition;
+    getCurrentInterviewQuestion.mockResolvedValue({
+      questionId: 'q-code-speech',
+      questionText: 'Implement a function that groups anagrams.',
+      order: 2,
+      type: 'coding',
+      language: 'javascript',
+      supportedLanguages: ['javascript', 'typescript', 'python', 'java', 'cpp'],
+    });
+    evaluateInterviewAnswer.mockResolvedValue({
+      questionId: 'q-code-speech',
+      scores: {
+        technicalScore: 86,
+        problemSolvingScore: 82,
+        communicationScore: 78,
+        feedback: 'Strong coding answer.',
+        finalFeedback: 'Strong coding answer.',
+      },
+    });
+
+    renderWithProviders(<InterviewSessionPage sessionId="session-code-speech" onCompleted={vi.fn()} />);
+
+    await screen.findByText(/implement a function that groups anagrams/i);
+    await user.click(screen.getByRole('button', { name: /open coding environment/i }));
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /language/i }), 'python');
+    expect(screen.getByLabelText(/code editor/i)).toHaveAttribute('data-language', 'python');
+
+    await user.click(screen.getByRole('button', { name: /start recording/i }));
+    emitRecognitionResult([
+      { transcript: 'I would use a dictionary keyed by sorted letters and handle empty input.', isFinal: true },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/reasoning transcript/i)).toHaveValue(
+        'I would use a dictionary keyed by sorted letters and handle empty input.',
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText(/code editor/i), {
+      target: {
+        value: 'def solve(words):\n    return words',
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: /confirm answer/i }));
+
+    await waitFor(() => {
+      expect(evaluateInterviewAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'session-code-speech',
+          type: 'coding',
+          code: 'def solve(words):\n    return words',
+          language: 'python',
+          transcript: 'I would use a dictionary keyed by sorted letters and handle empty input.',
+        }),
+      );
+    });
+  });
+
+  it(
+    'requests coding assistant feedback automatically after a reasoning pause and shows the voice reply audio',
+    async () => {
+      getCurrentInterviewQuestion.mockResolvedValue({
+        questionId: 'q-code-assistant',
+        questionText: 'Implement a function that merges overlapping intervals.',
+        order: 2,
+        type: 'coding',
+        language: 'javascript',
+      });
+
+      renderWithProviders(<InterviewSessionPage sessionId="session-code-assistant" onCompleted={vi.fn()} />);
+
+      await screen.findByText(/implement a function that merges overlapping intervals/i);
+      fireEvent.click(screen.getByRole('button', { name: /open coding environment/i }));
+      fireEvent.click(screen.getByLabelText(/voice replies/i));
+      fireEvent.change(screen.getByLabelText(/reasoning transcript/i), {
+        target: {
+          value: 'I will sort first and then merge intervals while walking through the array.',
+        },
+      });
+
+      await waitFor(
+        () => {
+          expect(requestCodingAssistantFeedback).toHaveBeenCalledWith(
+            expect.objectContaining({
+              sessionId: 'session-code-assistant',
+              transcript: 'I will sort first and then merge intervals while walking through the array.',
+              language: 'javascript',
+              includeAudio: true,
+            }),
+          );
+        },
+        { timeout: 5000 },
+      );
+
+      expect(await screen.findByText(/live interviewer feedback/i)).toBeInTheDocument();
+      const audio = screen.getByText(/your browser does not support audio playback/i).closest('audio');
+      expect(audio).not.toBeNull();
+    },
+    10000,
+  );
+
   it('opens a coding editor on demand for coding questions and submits code instead of transcript', async () => {
     const user = userEvent.setup();
     getCurrentInterviewQuestion.mockResolvedValue({
@@ -296,8 +412,10 @@ describe('Interview session page', () => {
       questionId: 'q-code',
       scores: {
         technicalScore: 84,
+        problemSolvingScore: 80,
         communicationScore: 72,
         feedback: 'Good start with a correct implementation.',
+        finalFeedback: 'Good start with a correct implementation.',
       },
     });
 
@@ -325,12 +443,13 @@ describe('Interview session page', () => {
     await waitFor(() => {
       expect(evaluateInterviewAnswer).toHaveBeenCalledWith(
         expect.objectContaining({
-          sessionId: 'session-code',
-          type: 'coding',
-          code: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
-          language: 'javascript',
-        }),
-      );
+            sessionId: 'session-code',
+            type: 'coding',
+            code: 'function reverseString(value) { return value.split(\"\").reverse().join(\"\"); }',
+            language: 'javascript',
+            transcript: '',
+          }),
+        );
     });
 
     expect(await screen.findByText(/good start with a correct implementation/i)).toBeInTheDocument();
@@ -366,8 +485,10 @@ describe('Interview session page', () => {
       questionId: 'q-code-progress',
       scores: {
         technicalScore: 82,
+        problemSolvingScore: 76,
         communicationScore: 70,
         feedback: 'Solid coding answer.',
+        finalFeedback: 'Solid coding answer.',
       },
     });
     getNextInterviewQuestion.mockResolvedValue({

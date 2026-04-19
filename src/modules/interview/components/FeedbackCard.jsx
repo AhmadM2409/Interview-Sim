@@ -12,6 +12,11 @@ export const FeedbackCard = ({ feedback }) => {
     );
   }
 
+  const isCodingFeedback = typeof feedback.problemSolvingScore === 'number';
+  const rating = isCodingFeedback
+    ? Math.round((feedback.technicalScore + feedback.problemSolvingScore + feedback.communicationScore) / 3)
+    : Math.round((feedback.technicalScore + feedback.communicationScore) / 2);
+
   return (
     <section className="panel stack">
       <p className="kicker" style={{ margin: 0 }}>
@@ -24,6 +29,14 @@ export const FeedbackCard = ({ feedback }) => {
           </p>
           <strong className="score">{feedback.technicalScore}</strong>
         </div>
+        {isCodingFeedback ? (
+          <div className="metric">
+            <p className="kicker" style={{ marginBottom: 6 }}>
+              Problem Solving
+            </p>
+            <strong className="score">{feedback.problemSolvingScore}</strong>
+          </div>
+        ) : null}
         <div className="metric">
           <p className="kicker" style={{ marginBottom: 6 }}>
             Communication
@@ -34,10 +47,30 @@ export const FeedbackCard = ({ feedback }) => {
           <p className="kicker" style={{ marginBottom: 6 }}>
             Rating
           </p>
-          <strong className="score">{Math.round((feedback.technicalScore + feedback.communicationScore) / 2)}</strong>
+          <strong className="score">{rating}</strong>
         </div>
       </div>
-      <p style={{ margin: 0 }}>{feedback.feedback}</p>
+      <p style={{ margin: 0 }}>{feedback.finalFeedback ?? feedback.feedback}</p>
+      {feedback.strengths?.length ? (
+        <p style={{ margin: 0 }}>
+          <strong>Strengths:</strong> {feedback.strengths.join(' ')}
+        </p>
+      ) : null}
+      {feedback.weaknesses?.length ? (
+        <p style={{ margin: 0 }}>
+          <strong>Weaknesses:</strong> {feedback.weaknesses.join(' ')}
+        </p>
+      ) : null}
+      {feedback.edgeCasesMissing?.length ? (
+        <p style={{ margin: 0 }}>
+          <strong>Edge cases:</strong> {feedback.edgeCasesMissing.join(' ')}
+        </p>
+      ) : null}
+      {feedback.codeQualityNotes?.length ? (
+        <p style={{ margin: 0 }}>
+          <strong>Code quality:</strong> {feedback.codeQualityNotes.join(' ')}
+        </p>
+      ) : null}
     </section>
   );
 };
