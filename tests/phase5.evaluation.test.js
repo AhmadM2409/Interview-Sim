@@ -420,4 +420,95 @@ describe('Phase 5 evaluation engine', () => {
       error: 'Answer type coding does not match current verbal question',
     });
   });
+
+  it('produces materially different coding feedback for weak and stronger code submissions', async () => {
+    const weakSeed = await seedActiveSession('Frontend Engineer', {
+      questionText: 'Write a function that reverses a string.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+    const strongSeed = await seedActiveSession('Frontend Engineer', {
+      questionText: 'Write a function that reverses a string.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+
+    const weakResponse = await request(app)
+      .post(`/api/interview/${weakSeed.sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code: 'function reverseString(value) {}',
+        language: 'javascript',
+      });
+
+    const strongResponse = await request(app)
+      .post(`/api/interview/${strongSeed.sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code: 'function reverseString(value) { if (!value) { return \"\"; } return value.split(\"\").reverse().join(\"\"); }',
+        language: 'javascript',
+        transcript: 'I would handle empty input first, then explain the O(n) time and space tradeoff.',
+      });
+
+    expect(weakResponse.status).toBe(200);
+    expect(strongResponse.status).toBe(200);
+    expect(strongResponse.body.data.scores.technicalScore).toBeGreaterThan(
+      weakResponse.body.data.scores.technicalScore,
+    );
+    expect(strongResponse.body.data.scores.problemSolvingScore).toBeGreaterThan(
+      weakResponse.body.data.scores.problemSolvingScore,
+    );
+    expect(strongResponse.body.data.scores.finalFeedback).toContain('reverseString');
+    expect(weakResponse.body.data.scores.finalFeedback).not.toEqual(
+      strongResponse.body.data.scores.finalFeedback,
+    );
+  });
+
+  it('lets coding transcripts influence communication and edge-case feedback', async () => {
+    const noTranscriptSeed = await seedActiveSession('Backend Engineer', {
+      questionText: 'Implement a function that returns the first non-repeating character in a string.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+    const withTranscriptSeed = await seedActiveSession('Backend Engineer', {
+      questionText: 'Implement a function that returns the first non-repeating character in a string.',
+      questionType: 'coding',
+      questionCategory: 'coding',
+      language: 'javascript',
+    });
+    const code = 'function firstUnique(value) { if (!value) { return null; } return value[0] ?? null; }';
+
+    const noTranscriptResponse = await request(app)
+      .post(`/api/interview/${noTranscriptSeed.sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code,
+        language: 'javascript',
+      });
+
+    const withTranscriptResponse = await request(app)
+      .post(`/api/interview/${withTranscriptSeed.sessionId}/evaluate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'coding',
+        code,
+        language: 'javascript',
+        transcript:
+          'I would start with empty input handling, then explain that I still need to track repeated characters and discuss complexity.',
+      });
+
+    expect(noTranscriptResponse.status).toBe(200);
+    expect(withTranscriptResponse.status).toBe(200);
+    expect(withTranscriptResponse.body.data.scores.communicationScore).toBeGreaterThan(
+      noTranscriptResponse.body.data.scores.communicationScore,
+    );
+    expect(withTranscriptResponse.body.data.scores.strengths.join(' ')).toContain('spoken reasoning');
+    expect(noTranscriptResponse.body.data.scores.weaknesses.join(' ')).toContain('spoken reasoning');
+  });
 });

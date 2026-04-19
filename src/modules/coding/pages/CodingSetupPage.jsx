@@ -50,6 +50,7 @@ export const CodingSetupPage = () => {
             <option value="typescript">TypeScript</option>
             <option value="python">Python</option>
             <option value="java">Java</option>
+            <option value="cpp">C++</option>
           </select>
         </label>
 

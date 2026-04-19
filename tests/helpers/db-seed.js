@@ -30,13 +30,15 @@ export const seedActiveSession = async (role, options = {}) => {
   );
 
   await run(
-    `INSERT INTO questions (id, session_id, question_text, question_type, language, order_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO questions (id, session_id, question_text, question_type, question_category, language, order_index, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       questionId,
       sessionId,
       options.questionText ?? 'Tell me about a recent project.',
       options.questionType ?? 'verbal',
+      options.questionCategory ??
+        ((options.questionType ?? 'verbal') === 'coding' ? 'coding' : 'background'),
       options.language ?? null,
       options.orderIndex ?? 1,
       createdAt,

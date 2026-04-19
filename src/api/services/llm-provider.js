@@ -1,5 +1,12 @@
 import { config } from '../config.js';
 import logger from '../logger.js';
+import {
+  inferQuestionCategory,
+  inferQuestionType,
+  normalizeQuestionRecord,
+  normalizeWhitespace,
+  supportedCodingLanguages,
+} from './interview-question-utils.js';
 
 const mistralUrl = 'https://api.mistral.ai/v1/chat/completions';
 
@@ -44,45 +51,14 @@ const parseStructuredJson = (text) => {
   }
 };
 
-const normalizeWhitespace = (value) =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-
-const inferQuestionType = (questionText, explicitType) => {
-  if (explicitType === 'coding') {
-    return 'coding';
-  }
-
-  const normalizedQuestion = normalizeWhitespace(questionText).toLowerCase();
-  const codingPatterns = [
-    /\bwrite\b/,
-    /\bimplement\b/,
-    /\bcode\b/,
-    /\bfunction\b/,
-    /\balgorithm\b/,
-    /\bsolve\b/,
-    /\bdebug\b/,
-    /\barray\b/,
-    /\blinked list\b/,
-    /\bbinary tree\b/,
-    /\bclass\b/,
-    /\bmethod\b/,
-  ];
-
-  return codingPatterns.some((pattern) => pattern.test(normalizedQuestion)) ? 'coding' : 'verbal';
-};
-
 const normalizeGeneratedQuestion = (value) => {
-  const questionText = normalizeWhitespace(value?.questionText);
-  const type = inferQuestionType(questionText, value?.type);
-  const language =
-    type === 'coding'
-      ? normalizeWhitespace(value?.language) || 'javascript'
-      : null;
+  const normalized = normalizeQuestionRecord(value);
 
   return {
-    questionText,
-    type,
-    language,
+    questionText: normalized.questionText,
+    type: normalized.type,
+    category: normalized.category,
+    language: normalized.type === 'coding' ? normalized.language || 'javascript' : null,
   };
 };
 
@@ -207,9 +183,12 @@ const buildSummaryInputPreview = (responses) => {
             order: response.order,
             questionText: response.questionText,
             questionType: response.questionType,
+            questionCategory: response.questionCategory,
             answerText: response.answerText,
             answerType: response.answerType,
             answerLanguage: response.answerLanguage,
+            transcript: response.transcript,
+            assistantMessages: response.assistantMessages,
             technicalScore: response.technicalScore,
             communicationScore: response.communicationScore,
             feedback: response.feedback,
@@ -224,6 +203,39 @@ const buildSummaryInputPreview = (responses) => {
     `Communication average: ${responses.communicationAverage ?? 'null'}`,
     `Responses:\n${responseLines}`,
   ].join('\n');
+};
+
+const buildAskedQuestionPreview = (questions) => {
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return 'No prior questions.';
+  }
+
+  return questions
+    .slice(-6)
+    .map((question) =>
+      JSON.stringify({
+        questionText: question.questionText,
+        category: question.category,
+        type: question.type,
+      }),
+    )
+    .join('\n');
+};
+
+const buildAssistantMessagePreview = (messages) => {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 'No prior assistant messages.';
+  }
+
+  return messages
+    .slice(-6)
+    .map((message) =>
+      JSON.stringify({
+        role: message.role,
+        text: message.text,
+      }),
+    )
+    .join('\n');
 };
 
 const detectToneIssues = (responses) => {
@@ -336,14 +348,28 @@ export const buildFallbackSummary = (role, responses, providerText) => {
   };
 };
 
-export const generateQuestion = async ({ role, sessionId, context, attempt }) => {
+export const generateQuestion = async ({
+  role,
+  sessionId,
+  context,
+  attempt,
+  targetCategory,
+  askedQuestions = [],
+}) => {
+  const normalizedTargetCategory = inferQuestionCategory('', targetCategory, targetCategory === 'coding' ? 'coding' : null);
   const prompt = [
     'Generate exactly one technical interview question.',
-    'Return strict JSON only: {"questionText":"...","type":"verbal|coding","language":"javascript|null"}',
+    'Return strict JSON only: {"questionText":"...","type":"verbal|coding","category":"background|behavioral|technical|situational|coding","language":"javascript|typescript|python|java|cpp|null"}',
+    'Avoid repeating the same semantic question that has already been asked.',
+    normalizedTargetCategory === 'coding'
+      ? `The question must be a coding interview prompt and should explicitly allow the candidate to answer in the programming language of their choice from: ${supportedCodingLanguages.join(', ')}.`
+      : `The question must fit the ${normalizedTargetCategory} category and should not become a coding prompt.`,
     `Role: ${role}`,
     `Session: ${sessionId}`,
     `Attempt: ${attempt}`,
     `External context:\n${contextSummary(context)}`,
+    `Target category: ${normalizedTargetCategory}`,
+    `Already asked questions:\n${buildAskedQuestionPreview(askedQuestions)}`,
   ].join('\n');
 
   const payload = await requestMistral(prompt);
@@ -356,6 +382,7 @@ export const generateQuestion = async ({ role, sessionId, context, attempt }) =>
 
   return normalizeGeneratedQuestion({
     questionText: text || `Tell me about a meaningful ${role} project you owned end-to-end.`,
+    category: normalizedTargetCategory,
   });
 };
 
@@ -380,6 +407,98 @@ export const evaluateAnswer = async ({ sessionId, transcript, attempt }) => {
     technicalScore: clampScore(transcript.length / 2),
     communicationScore: 75,
     feedback: text || 'Clear answer with room for deeper technical detail.',
+  };
+};
+
+export const evaluateCodingAnswer = async ({
+  sessionId,
+  role,
+  questionText,
+  questionType,
+  questionCategory,
+  language,
+  code,
+  transcript,
+  assistantMessages = [],
+  attempt,
+}) => {
+  const prompt = [
+    'Evaluate a candidate coding-interview answer.',
+    'Ground the response in the actual submitted code and reasoning. Do not invent code execution results.',
+    'Return strict JSON only: {"technicalScore":0-100,"problemSolvingScore":0-100,"communicationScore":0-100,"strengths":["..."],"weaknesses":["..."],"edgeCasesMissing":["..."],"codeQualityNotes":["..."],"finalFeedback":"..."}',
+    `Session: ${sessionId}`,
+    `Role: ${role}`,
+    `Attempt: ${attempt}`,
+    `Question type: ${questionType}`,
+    `Question category: ${questionCategory}`,
+    `Selected language: ${language}`,
+    `Question:\n${questionText}`,
+    `Code:\n${code || '[no code submitted]'}`,
+    `Transcript:\n${transcript || '[no transcript provided]'}`,
+    `Prior assistant interaction:\n${buildAssistantMessagePreview(assistantMessages)}`,
+  ].join('\n');
+
+  const payload = await requestMistral(prompt);
+  const text = extractTextFromMistral(payload);
+  const structured = parseStructuredJson(text);
+
+  if (structured && typeof structured === 'object') {
+    return structured;
+  }
+
+  return {
+    technicalScore: clampScore((code?.length ?? 0) / 4),
+    problemSolvingScore: clampScore((transcript?.length ?? 0) / 3),
+    communicationScore: clampScore((transcript?.length ?? 0) / 2),
+    strengths: ['The candidate submitted code for review.'],
+    weaknesses: ['The provider did not return structured coding feedback.'],
+    edgeCasesMissing: ['Edge-case coverage needs manual review.'],
+    codeQualityNotes: ['Static review only; no code execution was performed.'],
+    finalFeedback: text || 'Static review completed, but the provider did not return structured coding feedback.',
+  };
+};
+
+export const generateCodingAssistantFeedback = async ({
+  sessionId,
+  role,
+  questionText,
+  questionCategory,
+  language,
+  code,
+  transcript,
+  assistantMessages = [],
+  attempt,
+}) => {
+  const prompt = [
+    'You are acting as a live coding interviewer.',
+    'Review the candidate’s current code and spoken reasoning, then respond with short grounded interview-style feedback.',
+    'Do not fully solve the problem. Do not give generic encouragement.',
+    'Return strict JSON only: {"responseText":"...","goodSignals":["..."],"missingOrRisky":["..."],"questionableAssumptions":["..."],"suggestedNextStep":"..."}',
+    `Session: ${sessionId}`,
+    `Role: ${role}`,
+    `Attempt: ${attempt}`,
+    `Question category: ${questionCategory}`,
+    `Selected language: ${language}`,
+    `Question:\n${questionText}`,
+    `Current code:\n${code || '[no code yet]'}`,
+    `Recent spoken reasoning:\n${transcript || '[no transcript yet]'}`,
+    `Prior assistant interaction:\n${buildAssistantMessagePreview(assistantMessages)}`,
+  ].join('\n');
+
+  const payload = await requestMistral(prompt);
+  const text = extractTextFromMistral(payload);
+  const structured = parseStructuredJson(text);
+
+  if (structured && typeof structured === 'object') {
+    return structured;
+  }
+
+  return {
+    responseText: text || 'Keep grounding your explanation in the current code and call out the next edge case you plan to handle.',
+    goodSignals: [],
+    missingOrRisky: [],
+    questionableAssumptions: [],
+    suggestedNextStep: 'State the next concrete code change you would make and why.',
   };
 };
 

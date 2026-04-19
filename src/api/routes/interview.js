@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { HttpError } from '../errors.js';
-import { createSessionSchema } from '../schemas.js';
+import { codingAssistantRequestSchema, createSessionSchema } from '../schemas.js';
 import { successEnvelope } from '../response.js';
 import logger from '../logger.js';
 import {
@@ -8,6 +8,7 @@ import {
   createSession,
   createNextQuestion,
   evaluateSessionAnswer,
+  getCodingAssistantFeedback,
   getCurrentQuestionAudio,
   getCurrentQuestion,
   getSummary,
@@ -54,6 +55,16 @@ router.get('/:sessionId/question/current/audio', async (req, res, next) => {
   try {
     const audio = await getCurrentQuestionAudio(req.params.sessionId);
     res.status(200).json(successEnvelope(audio));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:sessionId/coding-assistant', async (req, res, next) => {
+  try {
+    const payload = codingAssistantRequestSchema.parse(req.body ?? {});
+    const feedback = await getCodingAssistantFeedback(req.params.sessionId, payload);
+    res.status(200).json(successEnvelope(feedback));
   } catch (error) {
     next(error);
   }

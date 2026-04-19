@@ -55,6 +55,70 @@ describe('Phase 4 interview flow', () => {
     expect(questionResponse.body.data.order).toBe(1);
   });
 
+  it('blocks semantically repeated questions and falls back to the planned missing category', async () => {
+    const createResponse = await request(app)
+      .post('/api/interview/session')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ role: 'Frontend Engineer', level: 'Mid' });
+
+    const sessionId = createResponse.body.data.sessionId;
+
+    vi.spyOn(tavilyProvider, 'fetchRoleContext').mockResolvedValue({
+      results: [{ content: 'Mocked context' }],
+    });
+    const generateSpy = vi.spyOn(llmProvider, 'generateQuestion').mockResolvedValue({
+      questionText: 'Tell me about your experience as a Frontend Engineer.',
+      type: 'verbal',
+      category: 'behavioral',
+    });
+
+    const response = await request(app)
+      .post(`/api/interview/${sessionId}/question/next`)
+      .set('Authorization', `Bearer ${token}`)
+      .send();
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toMatchObject({
+      category: 'behavioral',
+      type: 'verbal',
+    });
+    expect(response.body.data.questionText).not.toBe('Tell me about your experience as a Frontend Engineer.');
+    expect(generateSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps question progression varied across categories when the provider keeps drifting into repeats', async () => {
+    const createResponse = await request(app)
+      .post('/api/interview/session')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ role: 'Backend Engineer', level: 'Senior' });
+
+    const sessionId = createResponse.body.data.sessionId;
+
+    vi.spyOn(tavilyProvider, 'fetchRoleContext').mockResolvedValue({
+      results: [{ content: 'Mocked context' }],
+    });
+    vi.spyOn(llmProvider, 'generateQuestion').mockResolvedValue({
+      questionText: 'Tell me about your experience as a Backend Engineer.',
+      type: 'verbal',
+      category: 'background',
+    });
+
+    const categories = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const response = await request(app)
+        .post(`/api/interview/${sessionId}/question/next`)
+        .set('Authorization', `Bearer ${token}`)
+        .send();
+
+      expect(response.status).toBe(200);
+      categories.push(response.body.data.category);
+    }
+
+    expect(categories).toEqual(['behavioral', 'technical', 'situational', 'coding']);
+  });
+
   it('releases lock after forced internal error so next call can proceed', async () => {
     const { sessionId } = await seedActiveSession('Backend Engineer');
     vi.spyOn(tavilyProvider, 'fetchRoleContext').mockResolvedValue({
